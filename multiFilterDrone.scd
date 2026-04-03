@@ -199,7 +199,7 @@
 
 		// Dictionnary containing calibration results
 		instrument.add(\calibrationVals -> Dictionary.with(*[
-			\fsr -> [0, 4095],
+			\fsr -> [690, 2800],
 			\shakeThresh -> [0, 2],
 			\shakeMax -> [0, 6]
 		]));
@@ -427,7 +427,7 @@
 					rq = In.kr(instrument[\busSynth]["timbre"].subBus(1), 1);
 
 					// map FSR values to rq modulation coefficient
-					rqMod = fsr.lincurve(1500, 4095, 1, 10, -2, \min) * rq;
+					rqMod = fsr.lincurve(instrument[\calibrationVals][\fsr][0] * 1.2, instrument[\calibrationVals][\fsr][1], 1, 10, -2, \min) * rq;
 
 					// REQUIRES AMPLITUDE LIMITATION???
 
@@ -880,7 +880,8 @@
 				// dustAmp.postln;
 				//
 				// ////////////////////////////
-				// [acssk[0].round(0.01), dustDens.round(1.0), dustAmp.round(0.0001), noteDB[0].round(0.001), noteAmp[0].round(0.000001)].postln;
+				// track acssk[0]
+				[acssk[0].round(0.01), dustDens.round(1.0), dustAmp.round(0.0001), noteDB[0].round(0.001), noteAmp[0].round(0.0001)].postln;
 
 				// write on a control bus (synth will be mapped to it for continuous control of amplitude)
 				instrument[\busSynth]["amp"].setn(noteAmp);
@@ -949,6 +950,10 @@
 					instrument[\octArmed] = true;
 				};
 
+
+
+
+
 				// NOTES TRIGGERING
 				instrument[\synthArray] = noteVal.collect{
 					arg item, i;
@@ -1009,8 +1014,8 @@
 							instrument[\busSynth]["timbre"].subBus(2 * instrument[\numPartials] + 3, instrument[\numPartials])); // n channels
 
 						// map high partial modulation busses
-						synth.map(\hiPartialRatio, instrument[\busSynth]["hiPartialsMod"].subBus(i));
-
+						// synth.map(\hiPartialRatio, instrument[\busSynth]["hiPartialsMod"].subBus(i));
+						// UNPLUGGED UNTIUL LOUDNESS CORRETION WORKS!!!
 					}
 					,{
 						//

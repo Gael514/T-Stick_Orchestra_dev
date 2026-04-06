@@ -73,7 +73,7 @@
 			// ].flat,
 			\p3nuage,
 			[
-				1.2, 0.001, 30.dbamp,
+				1.2, 0.001, 60.dbamp,
 				Array.rand(instrument[\numPartials], 0.99, 1.01),
 				Array.geom(instrument[\numPartials], 1.0, 0.7).normalizeSum,
 				Array.fill(instrument[\numPartials], 1.0)
@@ -169,7 +169,7 @@
 			["rqMod"         ,                                    [ 1 ], "mapped"],
 			["presetSel"     ,                                    [ 0 ], "mapped"], // Bus for timbre preset selection
 			["dustDens"      ,                                [ 50000 ], "mapped"],
-			["dustAmp"       ,                              [ 0.dbamp ], "mapped"],
+			["dustAmp"       ,                              [ 0.dbamp ], "mapped"], // USED???
 			["vibratoStrips" ,                         Array.fill(7, 0), "mapped"],
 			["vibrato"       ,                         Array.fill(6, 1), "mapped"]
 		]);
@@ -180,6 +180,8 @@
 
 		// note state: noteOn/noteOff
 		instrument.add(\noteState -> Array.fill(6, 0));
+		// noteAmp window (store 1 last value)
+		instrument.add(\noteAmpW -> Array.fill(6, 0));
 
 		// control area state
 		instrument.add(\ctrlState -> 0);
@@ -823,7 +825,7 @@
 				arg msg;
 				var touchVals, normTouch, noteVal = [], noteTrig = [], noteVib, ctrlArea;
 				var acssk, ctrlOn, noteOn, ctrlOff, noteOff;
-				var dustDens, dustAmp, noteDB, noteAmp;
+				var dustDens, dustAmp = 1.0, noteDB, noteAmp;
 				var presetSel, params;
 				var octCtrl, acclX, capsAtk, capsRel, amps;
 				var now = SystemClock.seconds; // current time
@@ -860,7 +862,13 @@
 				// calculate dust density from area of control surface
 				// A = 0 -> impulses
 				// A = 1 -> white noise
-				dustDens = acssk[0].lincurve(0.1, 0.4, 5, 12000, 8, \minmax); // RETRAVAILLER
+				// dustDens = acssk[0].lincurve(0.1, 0.5, 5, 12000, 8, \minmax); // RETRAVAILLER
+				// split scaling at 30% area
+				dustDens = if(acssk[0] < 0.4) {
+					acssk[0].lincurve(0.1, 0.4, 5, 50, 2, \min);
+				} {
+					acssk[0].lincurve(0.4, 0.5, 5, 12000, 2, \max);
+				};
 				// acssk[0].postln;
 
 
@@ -868,8 +876,14 @@
 				instrument[\busSynth]["dustDens"].set(dustDens);
 
 				// calculate dustAmp, amplitude correction (higher density equivalent to white noise gets too loud)
-				dustAmp = dustDens.lincurve(50, 10000, 40.dbamp, 20.dbamp, 0, \minmax);
+				// dustAmp = dustDens.lincurve(50, 10000, 40, 20, 0, \minmax).dbamp; // DÉSACTIVÉ POUR LE MOMENT
 				// dustAmp = acssk[0].lincurve(0.1, 0.4, 40.dbamp, 20.dbamp, 0, \max);
+				// split amp correction
+				dustAmp = if(acssk[0] < 0.4) {
+					acssk[0].lincurve(0.1, 0.4, 30, 10, 2, nil).dbamp;
+				} {
+					acssk[0].lincurve(0.4, 0.5, 10, 0, 4, \max).dbamp;
+				};
 
 				// calculate notes amplitude
 				// dustAmp included for loudness correction
@@ -881,7 +895,8 @@
 				//
 				// ////////////////////////////
 				// track acssk[0]
-				[acssk[0].round(0.01), dustDens.round(1.0), dustAmp.round(0.0001), noteDB[0].round(0.001), noteAmp[0].round(0.0001)].postln;
+				// [acssk[0].round(0.01), dustDens.round(1.0), dustAmp.round(0.0001), noteDB[0].round(0.001), noteAmp[0].round(0.0001)].postln;
+				// [acssk[0].round(0.01), dustDens.round(1.0), dustAmp.ampdb.round(0.1), noteDB[0].ampdb.round(0.1), noteAmp[0].ampdb.round(0.1)].postln;
 
 				// write on a control bus (synth will be mapped to it for continuous control of amplitude)
 				instrument[\busSynth]["amp"].setn(noteAmp);
@@ -951,7 +966,7 @@
 				};
 
 
-
+				// instrument[\noteState].postln;
 
 
 				// NOTES TRIGGERING
@@ -1024,17 +1039,19 @@
 					);
 					// release only if there is a synth
 					// VÉRIFIER CE QUI FAIT LE noteOff
+					// ([noteOn[0], noteOff[0]]).postln;
 					if((noteOff[i] == true).or(ctrlOff == true).and(instrument[\synthArray][i].notNil), {
 						// var relAmp = instrument[\busSynth]["amp"].subBus(i).getSynchronous();
-						var relAmp = noteAmp[i];
-						("amp value at release " ++ relAmp.round(0.01)).postln;
-						// update \rels
+						var relAmp;
+						// relAmp = ctrlOff.not.asInteger * noteAmp[i];
+						relAmp = ctrlOff.not.asInteger * instrument[\noteAmpW][i];
+
 						//
 						// NEED TO MAINTAIN THE AMPLITUDE VALUE AFTER REMOVING FINGER -> UNMAP
-						// synth.unmap(\amp);
 						synth.set(\amp, relAmp);
-						// calculation of release time at release.....
-						// reads amp values for each note
+						("amp value at release " ++ relAmp.round(0.01)).postln;
+
+						// update release times \rels
 						// capsRel = instrument[\busSynth]["amp"].subBus(i).getSynchronous().lincurve(0, 1, 2, 6, 4);
 						capsRel = noteVal[i].lincurve(0, 1, 2, 6, 4);
 						("Release duration " ++ capsRel.round(0.01)).postln;
@@ -1046,7 +1063,7 @@
 						// synth.set(\ampMat, instrument[\busSynth]["timbre"].subBus(2).getSynchronous());
 						// synth.set(\freqMuls, instrument[\busSynth]["timbre"].subBus(2).getSynchronous());
 
-						// need to freeze density as well
+						// need to freeze density as well (don't change texture during release)
 						synth.set(\dustDens, dustDens);
 
 						// release Synth envelope
@@ -1058,8 +1075,13 @@
 
 
 				// update state of control area
-				instrument[\ctrlState] = acssk[0].roundUp(1.0);
-				instrument[\noteState] = noteVal.roundUp(1.0);
+				instrument[\ctrlState] = acssk[0].roundUp(1.0).clip(0, 1);
+				// update state of notes
+				instrument[\noteState] = noteVal.roundUp(1.0).clip(0, 1);
+
+				// update noteAmp values window
+				instrument[\noteAmpW] = noteAmp;
+
 
 			}, interface ++ "/raw/capsense", recvPort: port);
 

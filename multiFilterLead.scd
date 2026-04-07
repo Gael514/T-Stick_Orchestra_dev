@@ -71,13 +71,6 @@
 				[0.4, 1.0,   0.6, 0.4,   0.9,   0.8, 0.75,  0.5,   0.3, 0.2, 0.15, -120.dbamp, -120.dbamp, -120.dbamp, -120.dbamp],
 				Array.fill(instrument[\numPartials], 1.0)
 			].flat,
-			// \p3nuage,
-			// [
-			// 	1.2, 0.001, 10.dbamp,
-			// 	Array.rand(instrument[\numPartials], 0.99, 1.01),
-			// 	Array.geom(instrument[\numPartials], 1.0, 0.7).normalizeSum,
-			// 	Array.fill(instrument[\numPartials], 1.0)
-			// ].flat,
 			\p4drone,
 			[
 				2.05, 0.050, 6.dbamp,
@@ -126,6 +119,21 @@
 		// Sorted timbre names
 		instrument.add(\sortedTimbre -> instrument[\timbre].keys.asArray.sort);
 
+		// Calculation of each timbre preset highest partial
+		// will be used for filtering
+		instrument.add(\timbreHiPartials -> instrument[\sortedTimbre].collect{
+			|name, i|
+			// calculate all partials
+			(
+				Array.series(
+					instrument[\numPartials],
+					1,
+					instrument[\timbre][name][0]
+				) * instrument[\timbre][name].copyRange(3, 2 + instrument[\numPartials])
+			).maxItem;
+		});
+
+
 		// List of sound synthesis control parameters [, [intial values], mapped or not]
 		instrument.add(\synthParam -> [
 			["freq"          ,                                                          [ 220 ],         ],
@@ -151,6 +159,7 @@
 			["timbre"        ,           instrument[\timbre].asArray[0], "mapped"],
 			["partialsAmod"  ,                          Array.fill(instrument[\numPartials], 1), "mapped"],
 			["partialsFmod"  ,                          Array.fill(instrument[\numPartials], 1), "mapped"],
+			["hiPartialsMod" ,                  Array.fill(6, instrument[\timbreHiPartials][0]), "mapped"],
 			["rqMod"         ,                                    [ 1 ], "mapped"],
 			["presetSel"     ,                                    [ 0 ], "mapped"], // Bus for timbre preset selection
 			["dustDens"      ,                                [ 50000 ], "mapped"],
@@ -160,11 +169,13 @@
 		]);
 
 
-		// 11 notes: 2 octaves of minor penta scale
-		instrument.add(\minorPenta -> (110 * [1, 6/5, 4/3, 3/2, 7/4, 2]));
+		// 6 notes: 1 octave of minor penta scale
+		instrument.add(\minorPenta -> (440 * [1, 6/5, 4/3, 3/2, 7/4, 2]));
 
 		// note state: noteOn/noteOff
 		instrument.add(\noteState -> Array.fill(6, 0));
+		// noteAmp window (store 1 last value)
+		instrument.add(\noteAmpW -> Array.fill(6, 0));
 
 		// control area state
 		instrument.add(\ctrlState -> 0);
@@ -184,7 +195,7 @@
 
 		// Dictionnary containing calibration results
 		instrument.add(\calibrationVals -> Dictionary.with(*[
-			\fsr -> [0, 4095],
+			\fsr -> [690, 2800],
 			\shakeThresh -> [0, 2],
 			\shakeMax -> [0, 6]
 		]));
@@ -411,18 +422,23 @@
 					rq = In.kr(instrument[\busSynth]["timbre"].subBus(1), 1);
 
 					// map FSR values to rq modulation coefficient
-					rqMod = fsr.lincurve(1000, 4000, 1, 10, 0, \min) * rq;
+					rqMod = fsr.lincurve(instrument[\calibrationVals][\fsr][0] * 1.2, instrument[\calibrationVals][\fsr][1], 1, 10, -2, \min) * rq;
+
+					// REQUIRES AMPLITUDE LIMITATION???
 
 					Out.kr(instrument[\busSynth]["rqMod"], rqMod);
 				}.play(instrument[\mappingGrp]);
 
 				{
+					// REVIST BOF map to shake???
 					// mapping for partials modulation
 					//
 					var aMod, fMod, gyro, aDev, fDev, speed, aPartials, fPartials, numPartials = instrument[\numPartials];
 					gyro = In.kr(instrument[\busDmi][interface ++ "/raw/gyro"], 3);
-					fPartials = In.kr(instrument[\busSynth]["timbre"].subBus(3, numPartials), 3);
-					aPartials = In.kr(instrument[\busSynth]["timbre"].subBus(numPartials + 3, numPartials), 3);
+					// read fMuls on timbre control bus
+					fPartials = In.kr(instrument[\busSynth]["timbre"].subBus(3, numPartials), numPartials);
+					// read amps on timbre control bus
+					aPartials = In.kr(instrument[\busSynth]["timbre"].subBus(numPartials + 3, numPartials), numPartials);
 
 					aDev = (gyro.mean.linlin(-5, 5, -20, 20, nil)).dbamp;
 					fDev = (gyro.mean.linlin(-5, 5, -2.midiratio, 2.midiratio, nil));
@@ -440,10 +456,10 @@
 
 
 
+				// Mapping for timbre parameters
 				{
-					// Mapping for timbre parameters
 					//
-					var gyro, switch, locking, latch;
+					var gyro, switchPos, switchNeg, locking, latch;
 					var thresh = [[4, 3, 3], [5, 4, 4]], ceiling = [10, 6, 8];
 					var trig, selector = 0;
 					var preset, base = 0, numParams, params = instrument[\timbre][\p1bell], lag = 0.5;
@@ -470,8 +486,35 @@
 					// // selector.poll; // selector works (adjust gyro thresholds...)
 
 					// read preset number from bus
-					selector = In.kr(instrument[\busSynth]["presetSel"], 1);
+					// selector = In.kr(instrument[\busSynth]["presetSel"], 1);
 
+					// FLICK VERSION
+					// gyroX values are read from control busses
+					// selector is calculated to read the preset buffer \bufPreset
+
+					// // 1st step is to read gyro values around x-axis
+					gyro = In.kr(instrument[\busDmi][interface ++ "/raw/gyro"].index, 1);
+
+					// temporary switch (Schmidt trigger)
+					// PAS SÛR DE GARDER le trigger temporaire
+					// +1
+					// lag to slow back down???
+					switchPos = Schmidt.kr(gyro, 5, 10);
+					// switchPos = Schmidt.kr(gyro, 4, 5).poll(label: "switchPos");
+					// +1 when neg
+					switchNeg = Schmidt.kr(gyro.neg, -5.neg, -10.neg);
+					// switchNeg = Schmidt.kr(gyro.neg, -4.neg, -5.neg).poll(label: "switchNeg");
+
+					// trigger counter update
+					// PulseCount.kr(HPZ1.kr(switchPos) > 0).poll(label: "went up");
+					// PulseCount.kr(HPZ1.kr(switchNeg) > 0).poll(label: "went down");
+
+					// calculate selector (timbre preset number)
+					selector = (
+						PulseCount.kr(HPZ1.kr(switchPos) > 0) - PulseCount.kr(HPZ1.kr(switchNeg) > 0)
+					);
+					selector = (selector + 1) % 3;
+					// selector.poll;
 
 					// check if the preset selector changed value
 					// Impulse.kr(0) plays a single impulse as initial trigger
@@ -494,11 +537,85 @@
 						}), lag
 					);
 					Out.kr(instrument[\busSynth]["timbre"], params);
+
+					// also write the preset number on its control bus
+					Out.kr(instrument[\busSynth]["presetSel"], selector);
+
 				}.play(instrument[\mappingGrp]);
 
 				//
-				{}.play(instrument[\mappingGrp]);
+				// Mapping of gyro to mid-shelf filter frequencies
+				//
+				instrument.add(\gyroToMidShelf -> {
+					var hiPartialRatio = instrument[\timbreHiPartials][0];
+					var gyro, preset, mvt, dev, mod;
+					gyro = In.kr(instrument[\busDmi][interface ++ "/raw/gyro"].index, 3);
+					preset = In.kr(instrument[\busSynth]["presetSel"].index, 1);
 
+
+
+					// quantity of movement as average of abs values
+					gyro = Median.kr(2001, gyro);
+					mvt = gyro.abs.mean;
+					// use a lpf to smooth (0.5s period averaging) IF NECESSARY
+					// use Median.kr ?
+					// mvt = Median.kr(99, mvt);
+
+					// 1 TESTER AS-IS
+					// 2 AJOUTER Median.kr SI NÉCESSAIRE
+					// 3 OBSERVER SCOPE
+
+					// calculation of the deviation
+					dev = 4 * mvt + 1;
+					// dev.poll(label: "dev");
+
+					// there can be up to 6 synth playing simultaneously
+					//
+					// là je peux écrire des valeurs de modulation
+
+					// je dois réfléchir à QUOI moduler
+					// moduler hiFreq (moduler loFreq revient au même)
+
+					// quand le synth se déclenche, hiFreq est mappé sur le bus du même indice
+					// la valeur de hiFreq dépend du preset de timbre
+					// est-ce possible de calculer hiFreq à partir du dictionnaire \timbre
+
+					// Select highest paretial ratio corresponding to selected timbre preset
+					hiPartialRatio = Select.kr(preset, instrument[\timbreHiPartials]);
+
+					//
+					// INITIALZE SYNTH AT 0.8 * HIPARTIAL
+					// MODULATE UP TO 1.2 * HIPARTIAL
+					// Down to Max(1.5, 0.4*hiPartial)
+					// use fold
+
+					// the synth will modulate the ratios of fundamental frequency and highest partial (arguments )
+					// mod is Array(6)
+					// 1.5 factor to make sure highest partial not attenuated (headroom)
+					// highest partial can only be attenuated
+
+					// utiliser .fold(lo, hi)
+					// folding higher frequency for LPF
+					// make sure it does not filter below 1.5 fundamental frequency
+					// .fold(( 0.4 * hiPartialratio).max(1.5), 1.2 * hiPartialRatio)
+					// folding lower frequency for HPF
+					// .fold(0.7, )
+
+					// modulation value centered around 0.8 * hiPartialRatio
+					mod = (
+						(0.8 * hiPartialRatio) * LFNoise2.kr(LFNoise1.kr(5.dup(6)).range(0.05, 0.5)).range(
+							dev.reciprocal, 1
+						)
+					);
+					// ).fold(1.5, 1.5 * hiPartialRatio);
+					// mod.poll(label: "mod");
+
+					// Add combination with inclination (accX) for
+					// écrire les valeurs de modulation sur des bus dédiés à loFreq et hiFreq pour chaque note possible (params de synthèse)
+
+					Out.kr(instrument[\busSynth]["hiPartialsMod"], mod);
+				}.play(instrument[\mappingGrp]);
+				);
 			})
 		});
 
@@ -515,10 +632,15 @@
 
 
 				// limiter Synth
-				instrument.add(\limitSynth -> Synth(\comp, [\in, instrument[\busSynth][\fx], \thesh, -3.dbamp, \out, out], instrument[\limGrp]));
-
+				// instrument.add(\limitSynth -> Synth(\comp, [\in, instrument[\busSynth][\fx], \thesh, -3.dbamp, \out, out], instrument[\limGrp]));
+				// instrument.add(\limitSynth -> Synth(\comp, [
+				instrument.add(\limitSynth -> Synth([\compMono, \compStereo][instrument[\audioChan] - 1], [
+					\in, instrument[\busSynth][\fx],
+					\thesh, -3.dbamp,
+					\out, out
+				], instrument[\limGrp]));
 			});
-			(interface ++ ": Nodes created").postln;"--------------------------------".postln;
+			"--------------------------------".postln;(interface ++ ": Nodes created").postln;"--------------------------------".postln;
 		});
 
 		// mapping of control busses on synth control parameters
@@ -538,7 +660,6 @@
 				// mappings of \reverb
 
 			});
-			(interface + ": DMI READY").postln;"--------------------------------".postln;
 		});
 
 		////////////////////////////////
@@ -646,7 +767,7 @@
 			instrument.add(\reArmBrush -> 0.0); // lower threshold for re-arming (when brush value decays back to 0)
 
 			// record last time an octave brush was trigged
-			instrument.add(\lastOctBrushTime -> 0);
+			instrument.add(\lastOctTime -> 0);
 			instrument.add(\debounceOct -> 0.25); // 250 ms debounce
 
 			// OSCdef reads raw touch sensor values
@@ -654,9 +775,9 @@
 				arg msg;
 				var touchVals, normTouch, noteVal = [], noteTrig = [], noteVib, ctrlArea;
 				var acssk, ctrlOn, noteOn, ctrlOff, noteOff;
-				var dustDens, dustAmp, noteAmp;
+				var dustDens, dustAmp = 1.0, noteDB, noteAmp;
 				var presetSel, params;
-				var octCtrl, brush, capsAtk, capsRel, amps;
+				var octCtrl, acclX, capsAtk, capsRel, amps;
 				var now = SystemClock.seconds; // current time
 
 				touchVals = msg[1..30];
@@ -691,35 +812,47 @@
 				// calculate dust density from area of control surface
 				// A = 0 -> impulses
 				// A = 1 -> white noise
-				dustDens = acssk[0].lincurve(0.1, 0.5, 5, 20000, 2, \minmax); // RETRAVAILLER
+				// dustDens = acssk[0].lincurve(0.1, 0.5, 5, 12000, 8, \minmax); // RETRAVAILLER
+				// split scaling at 30% area
+				dustDens = if(acssk[0] < 0.4) {
+					acssk[0].lincurve(0.1, 0.4, 5, 50, 2, \min);
+				} {
+					acssk[0].lincurve(0.4, 0.5, 5, 12000, 2, \max);
+				};
+				// acssk[0].postln;
+
 
 				// write on a control bus (synth will be mapped to it for continuous control of density)
 				instrument[\busSynth]["dustDens"].set(dustDens);
 
 				// calculate dustAmp, amplitude correction (higher density equivalent to white noise gets too loud)
-				dustAmp = dustDens.lincurve(5, 20000, 40.dbamp, -40.dbamp, -10);
-
-				("dust Dens" + dustDens).postln; // REMOVE!!!!
-				("dust Amp" + dustAmp).postln; // REMOVE!!!!
+				// dustAmp = dustDens.lincurve(50, 10000, 40, 20, 0, \minmax).dbamp; // DÉSACTIVÉ POUR LE MOMENT
+				// dustAmp = acssk[0].lincurve(0.1, 0.4, 40.dbamp, 20.dbamp, 0, \max);
+				// split amp correction
+				dustAmp = if(acssk[0] < 0.4) {
+					acssk[0].lincurve(0.1, 0.4, 30, 10, 2, nil).dbamp;
+				} {
+					acssk[0].lincurve(0.4, 0.5, 10, 0, 4, \max).dbamp;
+				};
 
 				// calculate notes amplitude
 				// dustAmp included for loudness correction
-				noteAmp = noteVal.lincurve(0.0, 1.0, -60.dbamp, -10.dbamp, 0, nil) * dustAmp;
+				noteDB = noteVal.lincurve(0.1, 0.7, -60.dbamp, -10.dbamp, 0, \minmax);
+				noteAmp = noteDB * dustAmp;
 				// [acssk[0], dustDens].postln;
 
 				// dustAmp.postln;
-				// noteAmp.postln;
 
 				// write on a control bus (synth will be mapped to it for continuous control of amplitude)
 				instrument[\busSynth]["amp"].setn(noteAmp);
 
 				// PRESET SELECTION
-				// TEMPORARY - select preset based on centroid position IMPROVE!!!
-				presetSel = (acssk[1] * 3).floor.clip(0, 2);
+				// TEMPORARY - select preset based on centroid position IMPROVE!!!   // DÉSACTIVÉ -> preset sélectionné par FLICK
+				// presetSel = (acssk[1] * 3).floor.clip(0, 2);
 
 				// write preset value on control bus
 				// only if area > 0 (prevent preset going back to 0 when fingers leave control area)
-				if(acssk[0] > 0) {instrument[\busSynth]["presetSel"].set(presetSel)};
+				// if(acssk[0] > 0) {instrument[\busSynth]["presetSel"].set(presetSel)}; // DÉSACTIVÉ
 
 				// return timbre parameters
 				// params = instrument[\timbre][[ \bell, \glass, \drone2, \nuage ][presetSel]];
@@ -745,45 +878,35 @@
 				// CALCULATE TE PAIRS HERE OR IN THE SYNTH????
 
 				// OCTAVE CALCULATION
-				// check if 1 of strips 1 or 2 is touched
+				// check if a significant area of strips 0 to 2 are touched
 				// returns 0 if all values are above 0.05, 1 otherwise
-				// 0.05 is used as a threshold instead of 0, in case of unwanted (jitter?) values on touch sensor
 				//
-				octCtrl = octCtrl[1..2].any({ |i| i > 0.05}).asInteger;
 
-				// get brush value
-				brush = instrument[\busDmi][interface ++ "/instrument/brush"].getSynchronous();
+				// get acceleration X value
+				acclX = instrument[\busDmi][interface ++ "/raw/accl"].subBus(0).getSynchronous();
 
-				// combine brush with control area
-				octCtrl = octCtrl * brush;
+				// recalculate direction of octave increment
+				// X acceleration outside of specified range, then octave will be incremented
+				// acclX < 0 (button pointing down) -> octave up
+
+				// acclX = (acclX.abs > 5).asInteger * acclX.sign.neg;
+				acclX = (acclX.inclusivelyBetween(-5, 0.1)).not.asInteger * acclX.sign.neg;
 
 				// octave calculation logic
 				// touch sensor must be armed for octave increment
 
-				if ( (instrument[\octArmed] == true).and( (now - instrument[\lastOctBrushTime]) > instrument[\debounceOct]) ) {
-					// 2 conditions to evaluate
-					case
-					// positive brush -> octave up
-					{ octCtrl >= instrument[\posBrush] } {
-						instrument[\synthOct] = instrument[\synthOct] + 1;
-						// octave control must be re-armed
-						instrument[\octArmed] = false;
-						// update last brush time
-						instrument[\lastOctBrushTime] = now;
-						("octave " ++ instrument[\synthOct]).postln
-					}
-					// negative brush -> octave down
-					{ octCtrl <= instrument[\negBrush] } {
-						instrument[\synthOct] = instrument[\synthOct] - 1;
-						// octave control must be re-armed
-						instrument[\octArmed] = false;
-						// update last brush time
-						instrument[\lastOctBrushTime] = now;
-						("octave " ++ instrument[\synthOct]).postln
-					};
+				if ( (instrument[\octArmed] == true).and( (now - instrument[\lastOctTime]) > instrument[\debounceOct]).and(octCtrl.sum > 0.7) ) {
+					// evaluate octave
+
+					instrument[\synthOct] = (instrument[\synthOct] + acclX).clip(-1, 1);
+					// octave control must be re-armed
+					instrument[\octArmed] = false;
+					// update last brush time
+					instrument[\lastOctTime] = now;
+					("octave " ++ instrument[\synthOct]).postln
 				};
 				// re-arm
-				if ( (instrument[\octArmed].not) && (brush == instrument[\reArmBrush]) ) {
+				if ( (instrument[\octArmed].not) && (octCtrl.sum < 0.1) ) {
 					instrument[\octArmed] = true;
 				};
 
@@ -798,13 +921,11 @@
 					if(( (noteOn[i] == true).and(acssk[0] > 0) ).or( (noteVal[i] > 0).and(ctrlOn == true) ), {
 						(noteVal[i].round(0.01) + "trigged").postln;
 						("octave" ++ instrument[\synthOct]).postln; // REMOVE!!!!
-
-
 						// capsAtk[i].postln;
 						freqDev = Array.fill(instrument[\numPartials], {-0.25.rrand(0.25).midiratio});
-						synth = Synth(\multiFiltReson, [
-							// \freq, 2.pow(instrument[\synthOct]) * instrument[\minorPenta][i],
-							\freq, instrument[\minorPenta][i],
+						synth = Synth(\multiFiltResonLead, [
+							\freq, instrument[\minorPenta][i] * 2.pow(instrument[\synthOct]),
+							// \freq, instrument[\minorPenta][i],
 
 							// // bell sound
 							\harmo, 1,
@@ -816,11 +937,11 @@
 							// \atk, capsAtk[i], // REWORK
 							\atk, 0.001,
 							// \decay, atk.lincurve(0.001, 0.5, 0.3, 0.001), // TBC!!!!
-							\decay, 0.3,
+							\decay, 0.15,
 							// \sus, 0.7/peak; // TBC!!!!!!!!
-							\sus, 0.7,
+							\sus, 0.5,
 							\amp, -10.dbamp,
-							\out, out
+							\out, instrument[\busSynth][\fx]
 						], instrument[\mainGrp]);
 						("Note: " ++ instrument[\minorPenta][i].round(0.1) ++ " Hz").postln;
 						// ("Attack: " ++ capsAtk[i] ++ " s").postln;
@@ -829,7 +950,7 @@
 						synth.map(\amp, instrument[\busSynth]["amp"].subBus(i));
 
 						// map \fDev to control bus
-						synth.map(\fDev, instrument[\busSynth]["vibrato"].subBus(i)); // UNMAP AT RELEASE???
+						// synth.map(\fDev, instrument[\busSynth]["vibrato"].subBus(i)); // UNMAP AT RELEASE???
 
 						// map \dustDens to control bus
 						synth.map(\dustDens, instrument[\busSynth]["dustDens"]);
@@ -850,6 +971,9 @@
 						synth.map(\timeScale,
 							instrument[\busSynth]["timbre"].subBus(2 * instrument[\numPartials] + 3, instrument[\numPartials])); // n channels
 
+						// map high partial modulation busses
+						// synth.map(\hiPartialRatio, instrument[\busSynth]["hiPartialsMod"].subBus(i));
+						// UNPLUGGED UNTIUL LOUDNESS CORRETION WORKS!!!
 					}
 					,{
 						//
@@ -858,20 +982,32 @@
 					);
 					// release only if there is a synth
 					if((noteOff[i] == true).or(ctrlOff == true).and(instrument[\synthArray][i].notNil), {
-						var relAmp = instrument[\busSynth]["amp"].subBus(i).getSynchronous();
-						("amp value at release " ++ relAmp.round(0.01)).postln;
-						// update \rels
+						// var relAmp = instrument[\busSynth]["amp"].subBus(i).getSynchronous();
+						var relAmp;
+						// relAmp = ctrlOff.not.asInteger * noteAmp[i];
+						relAmp = ctrlOff.not.asInteger * instrument[\noteAmpW][i];
+
 						//
 						// NEED TO MAINTAIN THE AMPLITUDE VALUE AFTER REMOVING FINGER -> UNMAP
-						// synth.unmap(\amp);
 						synth.set(\amp, relAmp);
+						("amp value at release " ++ relAmp.round(0.01)).postln;
 						// calculation of release time at release.....
 						// reads amp values for each note
-						capsRel = instrument[\busSynth]["amp"].subBus(i).getSynchronous().lincurve(0, 1, 2, 6, 4);
+						// update release times \rels
+						// capsRel = instrument[\busSynth]["amp"].subBus(i).getSynchronous().lincurve(0, 1, 2, 6, 4);
+						capsRel = noteVal[i].lincurve(0, 1, 2, 6, 4);
 						("Release duration " ++ capsRel.round(0.01)).postln;
 						synth.set(\rels, capsRel * Array.fill(instrument[\numPartials], {1.33.rrand(1.33.reciprocal)}));
 						//
-						// release Synth
+						// set timbre parameters to current values at release, so they remain fixed until Synth is freed
+						// synth.set(\harmo, instrument[\busSynth]["timbre"].subBus(0).getSynchronous());
+						// synth.set(\ampMat, instrument[\busSynth]["timbre"].subBus(2).getSynchronous());
+						// synth.set(\freqMuls, instrument[\busSynth]["timbre"].subBus(2).getSynchronous());
+
+						// need to freeze density as well (don't change texture during release)
+						synth.set(\dustDens, dustDens);
+
+						// release Synth envelope
 						synth.set(\gate, 0);
 						synth = nil;
 					});
@@ -880,8 +1016,12 @@
 
 
 				// update state of control area
-				instrument[\ctrlState] = acssk[0].roundUp(1.0);
-				instrument[\noteState] = noteVal.roundUp(1.0);
+				instrument[\ctrlState] = acssk[0].roundUp(1.0).clip(0, 1);
+				// update state of notes
+				instrument[\noteState] = noteVal.roundUp(1.0).clip(0, 1);
+
+				// update noteAmp values window
+				instrument[\noteAmpW] = noteAmp;
 
 			}, interface ++ "/raw/capsense", recvPort: port);
 
@@ -889,7 +1029,9 @@
 
 
 
-			"--------------------------------".postln;(interface + ": OSCdef created").postln;"--------------------------------".postln;"".postln;
+			(interface + ": OSCdef created").postln;"--------------------------------".postln;
+			// Last step of process: OSCdef creation
+			(interface + ": DMI READY").postln;"--------------------------------".postln;
 		});
 	});
 	// end of \specificFunctions function
@@ -902,7 +1044,7 @@
 	instrument.add(\functionsRegister -> {
 		ServerBoot.add(instrument[\makeBuffers]);
 		ServerBoot.add(instrument[\makeBusses]);
-		ServerBoot.add(instrument[\makeOSCdef]);
+		// ServerBoot.add(instrument[\makeOSCdef]); // moved to \remaining functions
 		(interface + ": Functions registered").postln;
 	});
 	// end of \functionsRegister function
@@ -921,8 +1063,8 @@
 	instrument.add(\synthDefServerAdd -> {
 
 		// Filter SynthDef
-		~synthDefMaker.(\multiFiltReson, {
-			arg out=0, freq=220, fDev=1.0, harmo=1.0, rq=0.1, atk=0.1, decay=0.1, sus=0.7, ampMat=1.0, envSel=0, amp=0.7, gate=1, pos=0.0, dustDens=50000;
+		~synthDefMaker.(\multiFiltResonLead, {
+			arg out=0, freq=220, fDev=1.0, harmo=1.0, rq=0.1, atk=0.1, decay=0.1, sus=0.5, ampMat=1.0, envSel=0, amp=0.7, gate=1, pos=0.0, dustDens=50000, fFundRatio = 0.5, hiPartialRatio = 50, loDev = 1, hiDev = 1;
 			var envT, envN, env, sigMat, sigFilt, freqMax, peak;
 
 			// envT = EnvGen.kr(Env.asr(atk, 1.0, \rels.kr( Array.fill(~numPartials, 1) )), gate); // plusieurs gates????
@@ -930,6 +1072,8 @@
 			// env = Select.kr(envSel, [envN, envT]);
 
 			peak = atk.lincurve(0.001, 0.5, 1, 0.7); // AFFINER LES COEFFICIENTS
+			// gate = 0 closes the envelop, but does not release Synth
+			// Synth relase occurs later with Freeself and DetectSilence Ugens
 			env = EnvGen.kr(Env.adsr(atk, decay, sus, \rels.kr( Array.fill(instrument[\numPartials], 10) ), 1.0), gate, timeScale: \timeScale.kr(Array.geom(instrument[\numPartials], 1.0, 1.0)));
 			// env[0].poll;
 			// sigMat = WhiteNoise.ar;
@@ -947,28 +1091,43 @@
 					\amps.kr( Array.fill(instrument[\numPartials], 1/instrument[\numPartials]) ) * ampMat
 				) * env
 			); //rq multiplié par amps (ou autre Array)
+
+			// cut higher frequencies (noisy) NECESSARY???
 			freqMax = freq * ( (instrument[\numPartials]-1)*harmo +1);
 			sigFilt = BLowPass.ar(sigFilt, 0.5*freqMax, 0.3); // RETRAVAILLER!!!
-			// Libérer le synth seulement quand toutes les enveloppes sont closes
+
+			// low cut frequency: freq * fFundRatio (fFundRatio should be initialized at 0.5)
+			// sigFilt = HPF.ar(sigFilt, freq * fFundRatio);
+
+			// high cut frequency: freq * hiPartial (hiPartial should be initialized at freqMax / freq * 3???)
+			// sigFilt = LPF.ar(sigFilt, freq * hiPartialRatio);
+			sigFilt = LPF.ar(sigFilt, freq * LFNoise1.kr(0.5).range(0.5, 20)); // Aller surtout dans les basses....
+			// (freq * hiPartialRatio).poll(label: "hiPartialRatio");
+
+			// LeakDC added for security
+			sigFilt = LeakDC.ar(sigFilt, 0.995);
+
+			// Libérer le synth seulement quand toutes les enveloppes sont closes (quand le son est rendu très faible en fait)
 			FreeSelf.kr(DetectSilence.ar(sigFilt, -100.dbamp, time: 1.0)); // Freeself contrôlé par Mix(sig): 1 seul signal!
-			Out.ar(out, PanAz.ar(2, sigFilt, pos, amp) );
+			// Out.ar(out, PanAz.ar(2, sigFilt, pos, amp) );
+			Out.ar(out, sigFilt * amp); // Mono
 		});
 
 		// multiband equalizer TBC USAGE
-		~synthDefMaker.(\equalization, {
-			arg out=0, in=0, ampMod=0.25;
-			var sig, dry;
-			dry = In.ar(in, 1);
-			sig = BPF.ar(
-				dry,
-				\freqs.kr(Array.series(10, 100, 1000)) * LFNoise2.kr(\modF.kr(Array.rand(10, 0.5, 2.0))).range(-3.dbamp, -3.dbamp),
-				LFNoise2.kr(\modQ.kr(Array.rand(10, 0.5, 2.0))).range(0.1, 1.0)
-			);
-			sig = sig * LFNoise2.kr(\modA.kr(Array.rand(10, 0.5, 2.0))) * ampMod;
-			sig = Mix.ar(sig);
-			sig = dry + sig;
-			Out.ar(out, sig);
-		});
+		// ~synthDefMaker.(\equalization, {
+		// 	arg out=0, in=0, ampMod=0.25;
+		// 	var sig, dry;
+		// 	dry = In.ar(in, 1);
+		// 	sig = BPF.ar(
+		// 		dry,
+		// 		\freqs.kr(Array.series(10, 100, 1000)) * LFNoise2.kr(\modF.kr(Array.rand(10, 0.5, 2.0))).range(-3.dbamp, -3.dbamp),
+		// 		LFNoise2.kr(\modQ.kr(Array.rand(10, 0.5, 2.0))).range(0.1, 1.0)
+		// 	);
+		// 	sig = sig * LFNoise2.kr(\modA.kr(Array.rand(10, 0.5, 2.0))) * ampMod;
+		// 	sig = Mix.ar(sig);
+		// 	sig = dry + sig;
+		// 	Out.ar(out, sig);
+		// });
 
 		// reverb -> declared in main SC file
 
@@ -992,6 +1151,12 @@
 
 		// Maps Synth parameters to control busses
 		ServerTree.add(instrument[\makeMaps]);
+		s.sync;
+
+		// Create OSCdef (make sure all busses and mapping synth are already created)
+		ServerTree.add(instrument[\makeOSCdef]);
+
+		// instrument[\timbreHiPartials].round(0.01).postln; // REMOVE
 	});
 	// end of \remainingFunctions
 

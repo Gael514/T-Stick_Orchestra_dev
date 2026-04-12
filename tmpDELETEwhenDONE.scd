@@ -197,4 +197,4 @@ interface.postln;
 ~dmiFunctions[0][\busDmi][interface ++ "/instrument/brush"].postln;
 )
 
-
+~dmiFunctions[0][\loudness]

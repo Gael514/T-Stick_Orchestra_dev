@@ -174,9 +174,8 @@
 
 		// note state: noteOn/noteOff
 		instrument.add(\noteState -> Array.fill(6, 0));
-		// noteAmp window (store 1 last value)
-		instrument.add(\noteAmpW -> Array.fill(6, 0));
-
+		// noteAmp window (store 25 last values)
+		instrument.add(\noteAmpW -> Array.fill(6, Array.fill(25, 0)));
 		// control area state
 		instrument.add(\ctrlState -> 0);
 
@@ -186,9 +185,12 @@
 		// Minimum and maximum touch sensor values
 		instrument.add(\touchMin -> Array.fill(30, 1e12 ));
 		instrument.add(\touchMax -> Array.fill(30, -1e12 ));
-		// TEMPORARY
-		instrument[\touchMin] = Array.fill(30, 0);
+		// Assume a minimum value of 75 to cover for ghost triggers
+		instrument[\touchMin] = Array.fill(30, 75);
 		instrument[\touchMax] = [801.6, 1355.8, 1297.4, 1002, 698, 596, 654, 655, 667.4, 745, 781, 799, 771, 799.6, 717.6, 806, 847, 849, 890, 926, 977, 750.8, 670, 991, 991, 1029, 1009, 1047, 1463.8, 1380.4];
+
+		// threshold of note area for triggering (trill should be scaled above 0.1 see normalization)
+		instrument.add(\noteThresh -> 0.0);
 
 		// Turn on/off calibration
 		instrument.add(\toggle -> 0);
@@ -781,8 +783,8 @@
 				var now = SystemClock.seconds; // current time
 
 				touchVals = msg[1..30];
-				// normalizing touch sensor values
-				normTouch = touchVals.linlin(instrument[\touchMin], instrument[\touchMax], 0, 1, nil);
+				// normalizing touch sensor values (make sure normalized values don't go below 0)
+				normTouch = touchVals.linlin(instrument[\touchMin], instrument[\touchMax], 0, 1, \min);
 
 				// keep first 3 strips values for octave control (combined with brush)
 				octCtrl = normTouch[0..2];
@@ -868,8 +870,8 @@
 				// noteVal.round(0.01).postln;
 
 				// transient note state MOVE into fi STATEMENT???
-				noteOn = instrument[\noteState].collect{|item, i| (item == 0).and(noteVal[i] > 0)};
-				noteOff = instrument[\noteState].collect{|item, i| (item == 1).and(noteVal[i] == 0)};
+				noteOn = instrument[\noteState].collect{|item, i| (item == 0).and(noteVal[i] > instrument[\noteThresh])};
+				noteOff = instrument[\noteState].collect{|item, i| (item == 1).and(noteVal[i] <= instrument[\noteThresh])};
 
 				// [ctrlOn, ctrlOff, noteOn, noteOff].postln;
 
@@ -918,7 +920,7 @@
 					var synth, freqDev;
 					// check if ctrl area sustained and note on
 					// or control area on and note sustained
-					if(( (noteOn[i] == true).and(acssk[0] > 0) ).or( (noteVal[i] > 0).and(ctrlOn == true) ), {
+					if(( (noteOn[i] == true).and(acssk[0] > 0) ).or( (noteVal[i] > instrument[\noteThresh]).and(ctrlOn == true) ), {
 						(noteVal[i].round(0.01) + "trigged").postln;
 						("octave" ++ instrument[\synthOct]).postln; // REMOVE!!!!
 						// capsAtk[i].postln;
@@ -985,7 +987,7 @@
 						// var relAmp = instrument[\busSynth]["amp"].subBus(i).getSynchronous();
 						var relAmp;
 						// relAmp = ctrlOff.not.asInteger * noteAmp[i];
-						relAmp = ctrlOff.not.asInteger * instrument[\noteAmpW][i];
+						relAmp = ctrlOff.not.asInteger * instrument[\noteAmpW][i].maxItem; // max of 5 last values
 
 						//
 						// NEED TO MAINTAIN THE AMPLITUDE VALUE AFTER REMOVING FINGER -> UNMAP
@@ -1021,7 +1023,7 @@
 				instrument[\noteState] = noteVal.roundUp(1.0).clip(0, 1);
 
 				// update noteAmp values window
-				instrument[\noteAmpW] = noteAmp;
+				instrument[\noteAmpW] = instrument[\noteAmpW].collect{|item, i| item.shift(1).putFirst(noteAmp[i])};
 
 			}, interface ++ "/raw/capsense", recvPort: port);
 

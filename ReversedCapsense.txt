@@ -1,0 +1,3 @@
+Saved copy of initial patches
+
+The control surface covers strips 22 to 29. documented issue with T514, T516, T570 when control area is covered, other strips display values 50-100...)

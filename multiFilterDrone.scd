@@ -180,7 +180,7 @@
 		instrument.add(\touchMin -> Array.fill(30, 1e12 ));
 		instrument.add(\touchMax -> Array.fill(30, -1e12 ));
 		// Assume a minimum value of 75 to cover for ghost triggers
-		instrument[\touchMin] = Array.fill(30, 150);
+		instrument[\touchMin] = Array.fill(30, 50);
 		instrument[\touchMax] = [801.6, 1355.8, 1297.4, 1002, 698, 596, 654, 655, 667.4, 745, 781, 799, 771, 799.6, 717.6, 806, 847, 849, 890, 926, 977, 750.8, 670, 991, 991, 1029, 1009, 1047, 1463.8, 1380.4];
 
 		// threshold of note area for triggering (trill should be scaled above 0.1 see normalization)
@@ -820,18 +820,18 @@
 				octCtrl = normTouch[0..2];
 
 				// create an array for note values (average of 2 consecutive strip values)
-				[4, 5, 7, 8, 10, 11, 13, 14, 16, 17, 19, 20].pairsDo{|a, b|
+				[29, 28, 26, 25, 23, 22, 20, 19, 17, 16, 14, 13].pairsDo{|a, b|
 					noteVal = noteVal.add((normTouch[a] + normTouch[b]) / 2);
 				};
 
-				// every third strip from number 3 is reserved for vibrato
-				noteVib = normTouch[(3, 6..21)];
+				// every third strip from number 12 is reserved for vibrato
+				noteVib = normTouch[(12, 15..27).reverse];
 				// noteVib.round(0.1).postln;
 				// write the values on a control bus
 				instrument[\busSynth]["vibratoStrips"].setn(noteVib);
 
 				// define control area
-				ctrlArea = normTouch[22..29];
+				ctrlArea = normTouch[4..11];
 				// calculate descriptors for the control area
 				// divide by number of strips to have A < 1
 				acssk = instrument[\acssk].(ctrlArea / ctrlArea.size);
@@ -874,7 +874,7 @@
 				// noteAmp = noteDB * dustAmp;
 				// [acssk[0], dustDens].postln;
 
-				noteAmp.ampdb.round(1.0).postln;
+				// noteAmp.ampdb.round(1.0).postln;
 				//
 				// ////////////////////////////
 				// track acssk[0]
@@ -929,7 +929,7 @@
 				// acclX < 0 (button pointing down) -> octave up
 
 				// acclX = (acclX.abs > 5).asInteger * acclX.sign.neg;
-				acclX = (acclX.inclusivelyBetween(-5, 0.1)).not.asInteger * acclX.sign.neg;
+				acclX = (acclX.inclusivelyBetween(-0.2, 5)).not.asInteger * acclX.sign;
 
 				// octave calculation logic
 				// touch sensor must be armed for octave increment
@@ -961,7 +961,7 @@
 					// or control area on and note sustained
 					if(( (noteOn[i] == true).and(acssk[0] > 0) ).or( (noteVal[i] > instrument[\noteThresh]).and(ctrlOn == true) ), {
 						(noteVal[i].round(0.01) + "trigged").postln;
-						("octave" ++ instrument[\synthOct]).postln; // REMOVE!!!!
+						("octave " ++ instrument[\synthOct]).postln; // REMOVE!!!!
 						// capsAtk[i].postln;
 						freqDev = Array.fill(instrument[\numPartials], {-0.25.rrand(0.25).midiratio});
 						synth = Synth(\multiFiltReson, [

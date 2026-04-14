@@ -461,31 +461,6 @@
 					var trig, selector = 0;
 					var preset, base = 0, numParams, params = instrument[\timbre][\p1bell], lag = 2.0;
 
-					// // 1st step is to read gyro values
-					// gyro = In.kr(instrument[\busDmi][interface ++ "/raw/gyro"].index, 3);
-					//
-					// // temporary switch (Schmidt trigger)
-					// // VÉRIFIER LES SIGNES DE GYRO / HOW TO INITIALIZE THE BUSSES!!!!!!
-					// switch = Schmidt.kr(gyro, thresh[0], thresh[1]);
-					//
-					// // latch on preset
-					// locking = (gyro > ceiling);
-					//
-					// // latch toggles between 0 & 1 when locking triggers (0 to 1)
-					// latch = ToggleFF.kr(locking);
-					//
-					// // trig: 1 when both switch and latch are equal to 1
-					// // when either is 0, trig is 0
-					// trig = switch.max(latch);
-					//
-					// // calculate selector as a binary value 0 to 7
-					// selector = Mix(trig * [1, 2, 4]);
-					// // selector.poll; // selector works (adjust gyro thresholds...)
-
-					// read preset number from bus
-					// the bus is updated by the raw/capsense OSCdef
-					// selector = In.kr(instrument[\busSynth]["presetSel"], 1);
-
 					// FLICK VERSION
 					// gyroX values are read from control busses
 					// selector is calculated to read the preset buffer \bufPreset
@@ -886,20 +861,20 @@
 				// calculate dustAmp, amplitude correction (higher density equivalent to white noise gets too loud)
 				// dustAmp = dustDens.lincurve(50, 10000, 40, 20, 0, \minmax).dbamp; // DÉSACTIVÉ POUR LE MOMENT
 				// dustAmp = acssk[0].lincurve(0.1, 0.4, 40.dbamp, 20.dbamp, 0, \max);
-				// split amp correction À REVISITER!!!
-				dustAmp = if(acssk[0] < 0.4) {
-					acssk[0].lincurve(0.1, 0.4, 30, 10, 2, nil).dbamp;
-				} {
-					acssk[0].lincurve(0.4, 0.5, 10, 0, 4, \max).dbamp;
-				};
+				// split amp correction À REVISITER!!! REPLACED BY COMPRESSOR
+				// dustAmp = if(acssk[0] < 0.4) {
+				// 	acssk[0].lincurve(0.1, 0.4, 30, 10, 2, nil).dbamp;
+				// } {
+				// 	acssk[0].lincurve(0.4, 0.5, 10, 0, 4, \max).dbamp;
+				// };
 
 				// calculate notes amplitude
 				// dustAmp included for loudness correction
-				noteDB = noteVal.lincurve(0.1, 0.7, -60.dbamp, -10.dbamp, 0, \minmax);
-				noteAmp = noteDB * dustAmp;
+				noteAmp = noteVal.lincurve(0.0, 0.7, -80, 0, 2, \minmax).dbamp;
+				// noteAmp = noteDB * dustAmp;
 				// [acssk[0], dustDens].postln;
 
-				// dustAmp.postln;
+				noteAmp.ampdb.round(1.0).postln;
 				//
 				// ////////////////////////////
 				// track acssk[0]
@@ -907,8 +882,8 @@
 				// [acssk[0].round(0.01), dustDens.round(1.0), dustAmp.ampdb.round(0.1), noteDB[0].ampdb.round(0.1), noteAmp[0].ampdb.round(0.1)].postln;
 
 				// write on a control bus (synth will be mapped to it for continuous control of amplitude)
-				// instrument[\busSynth]["amp"].setn(noteAmp);
-				instrument[\busSynth]["amp"].setn(Array.fill(6, 1.0));
+				instrument[\busSynth]["amp"].setn(noteAmp);
+				// instrument[\busSynth]["amp"].setn(Array.fill(6, 1.0)); // force Synth \amp
 
 				// PRESET SELECTION
 				// TEMPORARY - select preset based on centroid position IMPROVE!!!   // DÉSACTIVÉ -> preset sélectionné par FLICK

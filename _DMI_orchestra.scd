@@ -37,7 +37,7 @@
 
 	// Instruments Definition
 	var instruments = [
-		["TStick_516", 8100, 0, "multiFilterDrone.scd", "mono"],
+		["TStick_516", 8100, 0, "multiFilterDrone.scd", "stereo"],
 		// ["TStick_514", 8000, 2, "fmSynth.scd", "mono"],
 		["TStick_570", 8200, 4, "multiFilterLead.scd", "mono"],
 	].collect{

@@ -57,7 +57,7 @@
 		// timbre presets
 		// [harmo, rq, ampMat, freqMuls..., amps..., timeScale...]
 		instrument.add(\timbre -> Dictionary.newFrom([
-			\p3nuage,
+			\p2nuage,
 			[
 				1.2, 0.001, 60.dbamp,
 				Array.rand(instrument[\numPartials], 0.99, 1.01),
@@ -71,14 +71,15 @@
 			// 	Array.geom(instrument[\numPartials], 1.0, 0.25).normalizeSum,
 			// 	Array.fill(instrument[\numPartials], 1.0)
 			// ].flat,
-			\p1rumble,
+			\p3rumble,
 			[
 				0.01, 0.200, 20.dbamp,
-				([1] ++ Array.rand(instrument[\numPartials]-1, -3, 3).midiratio) * 1, // RETRAVILLER
+				// ([1] ++ Array.rand(instrument[\numPartials]-1, -3, 3).midiratio) * 1, // RETRAVILLER
+				([1.5] ++ Array.rand(instrument[\numPartials]-1, -3, 3).midiratio) * 1, // RETRAVILLER
 				Array.geom(instrument[\numPartials], 1.0, 0.95).normalizeSum,
 				Array.fill(instrument[\numPartials], 1.0)
 			].flat,
-			\p4crackle, // formerly rumblebis
+			\p1crackle, // formerly rumblebis
 			[
 				2.05, 0.050, 30.dbamp,
 				[1] ++ Array.rand(instrument[\numPartials]-1, -3, 3).midiratio,
@@ -180,7 +181,8 @@
 		instrument.add(\touchMin -> Array.fill(30, 1e12 ));
 		instrument.add(\touchMax -> Array.fill(30, -1e12 ));
 		// Assume a minimum value of 75 to cover for ghost triggers
-		instrument[\touchMin] = Array.fill(30, 50);
+		// instrument[\touchMin] = Array.fill(30, 50);
+		instrument[\touchMin] = [50, 50, 50, 50, 100, 100, 100, 100, 100, 100, 100, 100, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50];
 		instrument[\touchMax] = [801.6, 1355.8, 1297.4, 1002, 698, 596, 654, 655, 667.4, 745, 781, 799, 771, 799.6, 717.6, 806, 847, 849, 890, 926, 977, 750.8, 670, 991, 991, 1029, 1009, 1047, 1463.8, 1380.4];
 
 		// threshold of note area for triggering (trill should be scaled above 0.1 see normalization)
@@ -847,9 +849,9 @@
 				// dustDens = acssk[0].lincurve(0.1, 0.5, 5, 12000, 8, \minmax); // RETRAVAILLER
 				// split scaling at 30% area
 				dustDens = if(acssk[0] < 0.4) {
-					acssk[0].lincurve(0.1, 0.4, 2, 20, 0, \min);
+					acssk[0].lincurve(0.1, 0.4, 2, 10, 1, \min);
 				} {
-					acssk[0].lincurve(0.4, 0.7, 20, 250, 2, \max);
+					acssk[0].lincurve(0.4, 0.7, 10, 250, 2, \max);
 				};
 				// acssk[0].postln;
 				// dustDens.postln;
@@ -870,7 +872,7 @@
 
 				// calculate notes amplitude
 				// dustAmp included for loudness correction
-				noteAmp = noteVal.lincurve(0.0, 0.7, -80, 0, 2, \minmax).dbamp;
+				noteAmp = noteVal.lincurve(0.0, 0.7, -60, 0, 0, \minmax).dbamp;
 				// noteAmp = noteDB * dustAmp;
 				// [acssk[0], dustDens].postln;
 
@@ -1027,14 +1029,14 @@
 					if((noteOff[i] == true).or(ctrlOff == true).and(instrument[\synthArray][i].notNil), {
 						// var relAmp = instrument[\busSynth]["amp"].subBus(i).getSynchronous();
 						var relAmp;
-						noteOff[i].postln;
+						// noteOff[i].postln;
 						// relAmp = ctrlOff.not.asInteger * noteAmp[i];
 						relAmp = ctrlOff.not.asInteger * instrument[\noteAmpW][i].maxItem; // max of 25 last values
-						instrument[\noteAmpW][i].maxItem.postln;
+						instrument[\noteAmpW][i].maxItem.ampdb.round(1.0).postln;
 						//
 						// NEED TO MAINTAIN THE AMPLITUDE VALUE AFTER REMOVING FINGER -> UNMAP
 						synth.set(\amp, relAmp);
-						("amp value at release " ++ relAmp.round(0.01)).postln;
+						("amp value at release " ++ relAmp.ampdb.round(1.0) ++ " dB").postln;
 
 						// update release times \rels
 						// capsRel = instrument[\busSynth]["amp"].subBus(i).getSynchronous().lincurve(0, 1, 2, 6, 4);
@@ -1141,10 +1143,13 @@
 
 			// cut higher frequencies (noisy) NECESSARY???
 			freqMax = freq * ( (instrument[\numPartials]-1)*harmo +1);
-			sigFilt = BLowPass.ar(sigFilt, 0.5*freqMax, 0.3); // RETRAVAILLER!!!
+			// sigFilt = BLowPass.ar(sigFilt, 0.5*freqMax, 0.3); // RETRAVAILLER!!!
+			sigFilt = BLowPass.ar(sigFilt, 0.5*freqMax, 2); // RETRAVAILLER!!!
 
-			// Compressor
+			// Compressor Downward (classical)
 			sigComp = CompanderD.ar(sigFilt, -30.dbamp, 1.0, compR, 0.01, 0.01);
+			// Compressor Upward
+			sigComp = CompanderD.ar(sigComp, -40.dbamp, 1/4, 1.0, 0.01, 0.01);
 
 			// low cut frequency: freq * fFundRatio (fFundRatio should be initialized at 0.5)
 			// sigFilt = HPF.ar(sigFilt, freq * fFundRatio);
@@ -1158,7 +1163,7 @@
 			// sigFilt = LeakDC.ar(sigFilt, 0.995);
 
 			// Panning
-			pan = LFNoise2.ar(LFNoise1.kr(1).range(0.1, 1.0)).range(-0.4, 0.4) * (instrument[\audioChan] - 1);
+			pan = LFNoise2.ar(LFNoise1.kr(1).range(0.1, 1.0)).range(-0.3, 0.3) * (instrument[\audioChan] - 1);
 
 			// sigFilt = PanAz.ar(); FINIR PUS TARD
 			// Out.ar(out, PanAz.ar(2, sigFilt, pos, amp) ); // PanAz
@@ -1168,7 +1173,8 @@
 			// Libérer le synth seulement quand toutes les enveloppes sont closes (quand le son est rendu très faible en fait)
 			FreeSelf.kr(DetectSilence.ar(sigComp, -100.dbamp, time: 1.0)); // Freeself contrôlé par Mix(sig): 1 seul signal!
 
-			Out.ar(out, sigComp); // Mono
+			Out.ar(out, PanAz.ar(instrument[\audioChan], sigComp, pan)); // Mono
+			// Out.ar(out, sigComp); // Mono
 		});
 
 		// multiband equalizer TBC USAGE

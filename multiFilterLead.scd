@@ -59,7 +59,7 @@
 		instrument.add(\timbre -> Dictionary.newFrom([
 			\p1bell,
 			[
-				1.0, 0.001, 20.dbamp,
+				1.0, 0.001, 40.dbamp,
 				[1.0, 1.0, 0.844, 0.750, 0.826, 1.011, 1.228, 1.366, 1.504, 1.640, 1.782, 1.0, 1.0, 1.0, 1.0],
 				[0.4, 1.0, 0.6, 0.4, 0.7, 0.6, 0.5, 0.1, 0.05, 0.01, -120.dbamp, -120.dbamp, -120.dbamp, -120.dbamp, -120.dbamp],
 				Array.fill(instrument[\numPartials], 1.0)
@@ -186,7 +186,7 @@
 		instrument.add(\touchMin -> Array.fill(30, 1e12 ));
 		instrument.add(\touchMax -> Array.fill(30, -1e12 ));
 		// Assume a minimum value of 75 to cover for ghost triggers
-		instrument[\touchMin] = Array.fill(30, 75);
+		instrument[\touchMin] = Array.fill(30, 50);
 		instrument[\touchMax] = [801.6, 1355.8, 1297.4, 1002, 698, 596, 654, 655, 667.4, 745, 781, 799, 771, 799.6, 717.6, 806, 847, 849, 890, 926, 977, 750.8, 670, 991, 991, 1029, 1009, 1047, 1463.8, 1380.4];
 
 		// threshold of note area for triggering (trill should be scaled above 0.1 see normalization)
@@ -408,7 +408,7 @@
 					).range(1, (strips[0..5]).collect( {|i| (i > 0).if(2/3, 1)} ) );
 
 					// combine both modulations
-					mod = Lag.kr(modU * modD, 0.015);
+					mod = Lag.kr(modU * modD, 0.01);
 					// speedU.poll;
 					// modU.poll;
 					// mod.poll;
@@ -464,31 +464,7 @@
 					var gyro, switchPos, switchNeg, locking, latch;
 					var thresh = [[4, 3, 3], [5, 4, 4]], ceiling = [10, 6, 8];
 					var trig, selector = 0;
-					var preset, base = 0, numParams, params = instrument[\timbre][\p1bell], lag = 0.5;
-
-					// // 1st step is to read gyro values
-					// gyro = In.kr(instrument[\busDmi][interface ++ "/raw/gyro"].index, 3);
-					//
-					// // temporary switch (Schmidt trigger)
-					// // VÉRIFIER LES SIGNES DE GYRO / HOW TO INITIALIZE THE BUSSES!!!!!!
-					// switch = Schmidt.kr(gyro, thresh[0], thresh[1]);
-					//
-					// // latch on preset
-					// locking = (gyro > ceiling);
-					//
-					// // latch toggles between 0 & 1 when locking triggers (0 to 1)
-					// latch = ToggleFF.kr(locking);
-					//
-					// // trig: 1 when both switch and latch are equal to 1
-					// // when either is 0, trig is 0
-					// trig = switch.max(latch);
-					//
-					// // calculate selector as a binary value 0 to 7
-					// selector = Mix(trig * [1, 2, 4]);
-					// // selector.poll; // selector works (adjust gyro thresholds...)
-
-					// read preset number from bus
-					// selector = In.kr(instrument[\busSynth]["presetSel"], 1);
+					var preset, base = 0, numParams, params = instrument[\timbre][\p1bell], lag = 1.0;
 
 					// FLICK VERSION
 					// gyroX values are read from control busses
@@ -790,18 +766,18 @@
 				octCtrl = normTouch[0..2];
 
 				// create an array for note values (average of 2 consecutive strip values)
-				[4, 5, 7, 8, 10, 11, 13, 14, 16, 17, 19, 20].pairsDo{|a, b|
+				[29, 28, 26, 25, 23, 22, 20, 19, 17, 16, 14, 13].pairsDo{|a, b|
 					noteVal = noteVal.add((normTouch[a] + normTouch[b]) / 2);
 				};
 
-				// every third strip from number 3 is reserved for vibrato
-				noteVib = normTouch[(3, 6..21)];
+				// every third strip from number 12 is reserved for vibrato
+				noteVib = normTouch[(12, 15..27).reverse];
 				// noteVib.round(0.1).postln;
 				// write the values on a control bus
 				instrument[\busSynth]["vibratoStrips"].setn(noteVib);
 
 				// define control area
-				ctrlArea = normTouch[22..29];
+				ctrlArea = normTouch[4..11];
 				// calculate descriptors for the control area
 				// divide by number of strips to have A < 1
 				acssk = instrument[\acssk].(ctrlArea / ctrlArea.size);
@@ -817,11 +793,12 @@
 				// dustDens = acssk[0].lincurve(0.1, 0.5, 5, 12000, 8, \minmax); // RETRAVAILLER
 				// split scaling at 30% area
 				dustDens = if(acssk[0] < 0.4) {
-					acssk[0].lincurve(0.1, 0.4, 5, 50, 2, \min);
+					acssk[0].lincurve(0.1, 0.4, 2, 20, 0, \min);
 				} {
-					acssk[0].lincurve(0.4, 0.5, 5, 12000, 2, \max);
+					acssk[0].lincurve(0.4, 0.7, 20, 500, 2, \max);
 				};
 				// acssk[0].postln;
+				// dustDens.postln;
 
 
 				// write on a control bus (synth will be mapped to it for continuous control of density)
@@ -830,17 +807,17 @@
 				// calculate dustAmp, amplitude correction (higher density equivalent to white noise gets too loud)
 				// dustAmp = dustDens.lincurve(50, 10000, 40, 20, 0, \minmax).dbamp; // DÉSACTIVÉ POUR LE MOMENT
 				// dustAmp = acssk[0].lincurve(0.1, 0.4, 40.dbamp, 20.dbamp, 0, \max);
-				// split amp correction
-				dustAmp = if(acssk[0] < 0.4) {
-					acssk[0].lincurve(0.1, 0.4, 30, 10, 2, nil).dbamp;
-				} {
-					acssk[0].lincurve(0.4, 0.5, 10, 0, 4, \max).dbamp;
-				};
+				// split amp correction À REVISITER!!! REPLACED BY COMPRESSOR
+				// dustAmp = if(acssk[0] < 0.4) {
+				// 	acssk[0].lincurve(0.1, 0.4, 30, 10, 2, nil).dbamp;
+				// } {
+				// 	acssk[0].lincurve(0.4, 0.5, 10, 0, 4, \max).dbamp;
+				// };
 
 				// calculate notes amplitude
 				// dustAmp included for loudness correction
-				noteDB = noteVal.lincurve(0.1, 0.7, -60.dbamp, -10.dbamp, 0, \minmax);
-				noteAmp = noteDB * dustAmp;
+				noteAmp = noteVal.lincurve(0.0, 0.7, -80, 0, 2, \minmax).dbamp;
+				// noteAmp = noteDB * dustAmp;
 				// [acssk[0], dustDens].postln;
 
 				// dustAmp.postln;
@@ -892,7 +869,7 @@
 				// acclX < 0 (button pointing down) -> octave up
 
 				// acclX = (acclX.abs > 5).asInteger * acclX.sign.neg;
-				acclX = (acclX.inclusivelyBetween(-5, 0.1)).not.asInteger * acclX.sign.neg;
+				acclX = (acclX.inclusivelyBetween(-0.2, 5)).not.asInteger * acclX.sign;
 
 				// octave calculation logic
 				// touch sensor must be armed for octave increment
@@ -922,7 +899,7 @@
 					// or control area on and note sustained
 					if(( (noteOn[i] == true).and(acssk[0] > 0) ).or( (noteVal[i] > instrument[\noteThresh]).and(ctrlOn == true) ), {
 						(noteVal[i].round(0.01) + "trigged").postln;
-						("octave" ++ instrument[\synthOct]).postln; // REMOVE!!!!
+						("octave " ++ instrument[\synthOct]).postln; // REMOVE!!!!
 						// capsAtk[i].postln;
 						freqDev = Array.fill(instrument[\numPartials], {-0.25.rrand(0.25).midiratio});
 						synth = Synth(\multiFiltResonLead, [
@@ -987,7 +964,7 @@
 						// var relAmp = instrument[\busSynth]["amp"].subBus(i).getSynchronous();
 						var relAmp;
 						// relAmp = ctrlOff.not.asInteger * noteAmp[i];
-						relAmp = ctrlOff.not.asInteger * instrument[\noteAmpW][i].maxItem; // max of 5 last values
+						relAmp = ctrlOff.not.asInteger * instrument[\noteAmpW][i].maxItem; // max of 25 last values
 
 						//
 						// NEED TO MAINTAIN THE AMPLITUDE VALUE AFTER REMOVING FINGER -> UNMAP
@@ -1066,8 +1043,8 @@
 
 		// Filter SynthDef
 		~synthDefMaker.(\multiFiltResonLead, {
-			arg out=0, freq=220, fDev=1.0, harmo=1.0, rq=0.1, atk=0.1, decay=0.1, sus=0.5, ampMat=1.0, envSel=0, amp=0.7, gate=1, pos=0.0, dustDens=50000, fFundRatio = 0.5, hiPartialRatio = 50, loDev = 1, hiDev = 1;
-			var envT, envN, env, sigMat, sigFilt, freqMax, peak;
+			arg out=0, freq=220, fDev=1.0, harmo=1.0, rq=0.1, atk=0.1, decay=0.1, sus=0.5, ampMat=1.0, envSel=0, amp=0.7, gate=1, pos=0.0, dustDens=5000, dustDev=0.5, fFundRatio = 0.5, hiPartialRatio = 50, loDev = 1, hiDev = 1, compTh = -18.dbamp, compR = 1/3;
+			var envT, envN, env, sigMat, sigFilt, freqMax, peak, pan, sigComp;
 
 			// envT = EnvGen.kr(Env.asr(atk, 1.0, \rels.kr( Array.fill(~numPartials, 1) )), gate); // plusieurs gates????
 			// envN = EnvGen.kr(Env.perc(atk, \rels.kr( Array.fill(~numPartials, 1) )));
@@ -1079,7 +1056,8 @@
 			env = EnvGen.kr(Env.adsr(atk, decay, sus, \rels.kr( Array.fill(instrument[\numPartials], 10) ), 1.0), gate, timeScale: \timeScale.kr(Array.geom(instrument[\numPartials], 1.0, 1.0)));
 			// env[0].poll;
 			// sigMat = WhiteNoise.ar;
-			sigMat = Dust2.ar(dustDens);
+			// sigMat = Dust2.ar(dustDens);
+			sigMat = GaussTrig.ar(dustDens, dustDev); // less random than dust, dev = 25% deviation (inspired by granulator)
 			sigFilt = Mix.ar(
 				BPF.ar(
 					sigMat,
@@ -1098,21 +1076,31 @@
 			freqMax = freq * ( (instrument[\numPartials]-1)*harmo +1);
 			sigFilt = BLowPass.ar(sigFilt, 0.5*freqMax, 0.3); // RETRAVAILLER!!!
 
+			// Compressor
+			sigComp = CompanderD.ar(sigFilt, -30.dbamp, 1.0, compR, 0.01, 0.01);
+
 			// low cut frequency: freq * fFundRatio (fFundRatio should be initialized at 0.5)
 			// sigFilt = HPF.ar(sigFilt, freq * fFundRatio);
 
 			// high cut frequency: freq * hiPartial (hiPartial should be initialized at freqMax / freq * 3???)
 			// sigFilt = LPF.ar(sigFilt, freq * hiPartialRatio);
-			sigFilt = LPF.ar(sigFilt, freq * LFNoise1.kr(0.5).range(0.5, 20)); // Aller surtout dans les basses....
+			sigComp = LPF.ar(sigComp, freq * LFNoise1.kr(0.5).range(0.5, 20)); // Aller surtout dans les basses....
 			// (freq * hiPartialRatio).poll(label: "hiPartialRatio");
 
 			// LeakDC added for security
-			sigFilt = LeakDC.ar(sigFilt, 0.995);
+			//sigFilt = LeakDC.ar(sigFilt, 0.995);
+
+			pan = LFNoise2.ar(LFNoise1.kr(1).range(0.1, 1.0)).range(-0.4, 0.4) * (instrument[\audioChan] - 1);
+
+			// sigFilt = PanAz.ar(); FINIR PUS TARD
+			// Out.ar(out, PanAz.ar(2, sigFilt, pos, amp) ); // PanAz
+			// amp is placed at the very end (after all processes)
+			sigComp = sigComp * amp;
 
 			// Libérer le synth seulement quand toutes les enveloppes sont closes (quand le son est rendu très faible en fait)
-			FreeSelf.kr(DetectSilence.ar(sigFilt, -100.dbamp, time: 1.0)); // Freeself contrôlé par Mix(sig): 1 seul signal!
-			// Out.ar(out, PanAz.ar(2, sigFilt, pos, amp) );
-			Out.ar(out, sigFilt * amp); // Mono
+			FreeSelf.kr(DetectSilence.ar(sigComp, -100.dbamp, time: 1.0)); // Freeself contrôlé par Mix(sig): 1 seul signal!
+			// Out.ar(out, PanAz.ar(2, sigComp, pos, amp) );
+			Out.ar(out, sigComp); // Mono
 		});
 
 		// multiband equalizer TBC USAGE

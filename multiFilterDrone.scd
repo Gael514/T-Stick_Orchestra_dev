@@ -59,7 +59,7 @@
 		instrument.add(\timbre -> Dictionary.newFrom([
 			\p2nuage,
 			[
-				1.2, 0.001, 60.dbamp,
+				1.2, 0.001, 70.dbamp,
 				Array.rand(instrument[\numPartials], 0.99, 1.01),
 				Array.geom(instrument[\numPartials], 1.0, 0.7).normalizeSum,
 				Array.fill(instrument[\numPartials], 1.0)
@@ -73,7 +73,7 @@
 			// ].flat,
 			\p3rumble,
 			[
-				0.01, 0.200, 20.dbamp,
+				0.01, 0.200, 30.dbamp,
 				// ([1] ++ Array.rand(instrument[\numPartials]-1, -3, 3).midiratio) * 1, // RETRAVILLER
 				([1.5] ++ Array.rand(instrument[\numPartials]-1, -3, 3).midiratio) * 1, // RETRAVILLER
 				Array.geom(instrument[\numPartials], 1.0, 0.95).normalizeSum,
@@ -81,7 +81,7 @@
 			].flat,
 			\p1crackle, // formerly rumblebis
 			[
-				2.05, 0.050, 30.dbamp,
+				2.05, 0.050, 36.dbamp,
 				[1] ++ Array.rand(instrument[\numPartials]-1, -3, 3).midiratio,
 				Array.geom(instrument[\numPartials], 1.0, 0.95).normalizeSum,
 				Array.fill(instrument[\numPartials], 1.0)
@@ -95,7 +95,7 @@
 			// ].flat,
 			// \woodPerc,
 			// [
-			// 	1.2, 0.01, 60.dbamp,
+			// 1.2, 0.01, 60.dbamp,
 			// 	Array.fill(instrument[\numPartials], 1.0),
 			// 	Array.geom(instrument[\numPartials], 1.0, 0.7).normalizeSum,
 			// 	Array.geom(instrument[\numPartials], 1.0, 0.25)
@@ -168,8 +168,8 @@
 
 		// note state: noteOn/noteOff
 		instrument.add(\noteState -> Array.fill(6, 0));
-		// noteAmp window (store 25 last values)
-		instrument.add(\noteAmpW -> Array.fill(6, Array.fill(25, 0)));
+		// noteAmp window (store last 10 values ~ 10 * 8 ms)
+		instrument.add(\noteAmpW -> Array.fill(6, Array.fill(10, 0)));
 
 		// control area state
 		instrument.add(\ctrlState -> 0);
@@ -194,8 +194,8 @@
 		// Dictionnary containing calibration results
 		instrument.add(\calibrationVals -> Dictionary.with(*[
 			\fsr -> [690, 2800],
-			\shakeThresh -> [0, 2],
-			\shakeMax -> [0, 6]
+			\shakeThresh -> [0, 2.5],
+			\shakeMax -> [0, 5]
 		]));
 		//
 
@@ -369,51 +369,6 @@
 				// }.play(instrument[\mappingGrp]);
 
 				{
-					//
-					// mapping for notes vibrato / pitch modulation
-					//
-					var strips;
-					var speedU, widthU, speedD, widthD;
-					var speed, width, modU, modD, mod;
-
-					// read normalized strip values
-					strips = In.kr(instrument[\busSynth]["vibratoStrips"], 7);
-
-					// calculate modulation speed (2 arrays of 6 values)
-					// and (2 arrays of 6 values as well)
-					// speed = [ strips[1..6], strips[0..5] ].lincurve(0, 0.5, 8, 18, 0, nil);
-					speedU = strips[1..6].lincurve(0, 0.5, 8, 18, 0, nil);
-					speedD = strips[0..5].lincurve(0, 0.5, 8, 18, 0, nil);
-					// width = speed.lincurve(8, 18, 0.1, 0.5, 0, nil);
-					widthU = speedU.lincurve(8, 18, 0.1, 0.5, 0, nil);
-					widthD = speedD.lincurve(8, 18, 0.1, 0.5, 0, nil);
-
-					// calculate modulation when touching the upper strip of a note
-					// modulates 1 octave up when touched
-					modU = LFPulse.kr(
-						speedU * LFNoise1.kr(1.0!6).range(0.9, 1.1),
-						0,
-						widthU
-					).range(1, (strips[1..6]).collect( {|i| (i > 0).if(2, 1) }) );
-
-					// calculate modulation when touching the lower strip of a note
-					// modulates 1 fourth down when touched
-					modD = LFPulse.kr(
-						speedD * LFNoise1.kr(1.0!6).range(0.9, 1.1),
-						0,
-						widthD
-					).range(1, (strips[0..5]).collect( {|i| (i > 0).if(2/3, 1)} ) );
-
-					// combine both modulations
-					mod = modU * modD;
-					// speedU.poll;
-					// modU.poll;
-					// mod.poll;
-					// write on control busses
-					Out.kr(instrument[\busSynth]["vibrato"], mod);
-				}.play(instrument[\mappingGrp]);
-
-				{
 					// mapping for rq modulation
 					//
 					var fsr, rq, rqMod;
@@ -432,24 +387,33 @@
 					// REVIST BOF map to shake???
 					// mapping for partials modulation
 					//
-					var aMod, fMod, gyro, aDev, fDev, speed, aPartials, fPartials, numPartials = instrument[\numPartials];
-					gyro = In.kr(instrument[\busDmi][interface ++ "/raw/gyro"], 3);
+					var aMod, fMod, shake, shakeMean, aDev, fDev, speed, aPartials, fPartials, numPartials = instrument[\numPartials];
+					shake = In.kr(instrument[\busDmi][interface ++ "/instrument/shakexyz"], 3).mean;
 					// read fMuls on timbre control bus
 					fPartials = In.kr(instrument[\busSynth]["timbre"].subBus(3, numPartials), numPartials);
 					// read amps on timbre control bus
-					aPartials = In.kr(instrument[\busSynth]["timbre"].subBus(numPartials + 3, numPartials), numPartials);
+					// aPartials = In.kr(instrument[\busSynth]["timbre"].subBus(numPartials + 3, numPartials), numPartials);
 
-					aDev = (gyro.mean.linlin(-5, 5, -10, 10, nil)).dbamp;
-					fDev = (gyro.mean.lincurve(-5, 5, -2.midiratio, 2.midiratio, 0));
-					speed = LagUD.kr(gyro.abs.mean.lincurve(0, 10, 0.5, 2, -4), 2, 2);
+					// Running average over 60 control cycles
+					// OSC messages received at about 125 Hz
+					// Control block size: 64 samples -> 750 Hz (SR = 48 kHz)
+					// 60 cycles ~ 10 OSC values
+					shakeMean = RunningSum.kr(shake, 60) * (60.reciprocal);
+					// shakeMean.round(0.1).poll(label: "shake");
 
+					// aDev = (shake.mean.linlin(-5, 5, -10, 10, nil)).dbamp;
+					// Partial frequency deviation (for ref FM patch, max dev 3)
+					fDev = (shakeMean.lincurve(instrument[\calibrationVals][\shakeThresh][1] * 0.8, instrument[\calibrationVals][\shakeMax][1], 1, 12.midiratio, -2, \min));
+					fDev = LagUD.kr(fDev, 0.1, 1.0);
+
+					// fDev.round(0.1).poll(label: "dev");
 					// partials amp modulation
-					aMod = LFNoise2.kr(speed.dup(numPartials)).range(aDev, aDev.reciprocal) * aPartials;
+					// aMod = LFNoise2.kr(speed.dup(numPartials)).range(aDev, aDev.reciprocal) * aPartials;
 
 					// partials freq modulation
-					fMod = LFNoise2.kr(speed.dup(numPartials)).range(fDev, fDev.reciprocal) * fPartials;
+					fMod = LFNoise0.kr(LFNoise1.kr(5).range(0.5, 2).dup(numPartials)).range(fDev, fDev.reciprocal) * fPartials;
 
-					Out.kr(instrument[\busSynth]["partialsAmod"], aMod);
+					// Out.kr(instrument[\busSynth]["partialsAmod"], aMod);
 					Out.kr(instrument[\busSynth]["partialsFmod"], fMod);
 				}.play(instrument[\mappingGrp]);
 
@@ -593,6 +557,22 @@
 				}.play(instrument[\mappingGrp]);
 				); //
 
+				//
+				// Mapping of gyro to reverb Synth parameters revMix, revRoom, revDamp
+				//
+				{
+					var mapRevMix, mapRevRoom, mapRevDamp, gyro;
+					gyro = In.kr(instrument[\busDmi][interface ++ "/raw/gyro"].index, 3);
+					//
+					mapRevMix = (gyro[0].abs + gyro[1].abs + gyro[2].abs).lincurve(0, 0.5, 0.2, 0.8, -5.4, nil);
+					mapRevRoom = (gyro[0].abs + gyro[1].abs + gyro[2].abs) / 3;
+					mapRevDamp = (gyro[0].abs + gyro[1].abs + gyro[2].abs) / 4;
+					// Write on control busses
+					Out.kr(instrument[\busSynth]["revMix"], mapRevMix);
+					Out.kr(instrument[\busSynth]["revRoom"], mapRevRoom);
+					Out.kr(instrument[\busSynth]["revDamp"], mapRevDamp);
+				}.play(instrument[\mappingGrp]);
+
 				// // Loudness and true-peak REMOVE
 				// instrument.add(\loudness -> {
 				// 	// arg test = -12.dbamp;
@@ -623,6 +603,14 @@
 				// instrument.add(\eqSynth -> Synth(\equalization, [\in, out, \out, out, \ampMod, 0.25], instrument[\fxGrp]));
 				// ~eqSynth = Synth(\equalization, [\in, 1, \out, 1, \ampMod, 0.25], ~fxGrp);
 
+
+				// reverb Synth (tail of the fx group)
+				instrument.add(\revSynth -> Synth.tail(instrument[\fxGrp], [\reverbMono, \reverbStereo][instrument[\audioChan] - 1], [
+					\in, instrument[\busSynth][\fx],
+					\mix, 0.33,
+					\room, 0.5,
+					\damp, 0.2,
+				], instrument[\fxGrp]));
 
 				// // Mid-Shelf Filter
 				// instrument.add(\midShelfEQ ->
@@ -692,7 +680,9 @@
 
 
 				// mappings of \reverb
-
+				instrument[\revSynth].map(\mix, instrument[\busSynth]["revMix"]);
+				instrument[\revSynth].map(\room, instrument[\busSynth]["revRoom"]);
+				instrument[\revSynth].map(\damp, instrument[\busSynth]["revDamp"]);
 			});
 		});
 
@@ -796,9 +786,9 @@
 			instrument.add(\octArmed -> true);
 
 			// threshold for brush
-			instrument.add(\posBrush -> 0.15);
-			instrument.add(\negBrush -> -0.15);
-			instrument.add(\reArmBrush -> 0.0); // lower threshold for re-arming (when brush value decays back to 0)
+			// instrument.add(\posBrush -> 0.15);
+			// instrument.add(\negBrush -> -0.15);
+			// instrument.add(\reArmBrush -> 0.0); // lower threshold for re-arming (when brush value decays back to 0)
 
 			// record last time an octave brush was trigged
 			instrument.add(\lastOctTime -> 0);
@@ -1006,8 +996,8 @@
 						synth.map(\ampMat,
 							instrument[\busSynth]["timbre"].subBus(2)); // 1 channel
 						synth.map(\freqMuls,
-							instrument[\busSynth]["timbre"].subBus(3, instrument[\numPartials])); // n channels
-						// instrument[\busSynth]["partialsFmod"]); // n channels
+							// instrument[\busSynth]["timbre"].subBus(3, instrument[\numPartials])); // n channels
+							instrument[\busSynth]["partialsFmod"]); // n channels
 						synth.map(\amps,
 							instrument[\busSynth]["timbre"].subBus(instrument[\numPartials] + 3, instrument[\numPartials])); // n channels
 						// instrument[\busSynth]["partialsAmod"], instrument[\numPartials]); // n channels
@@ -1031,8 +1021,9 @@
 						var relAmp;
 						// noteOff[i].postln;
 						// relAmp = ctrlOff.not.asInteger * noteAmp[i];
-						relAmp = ctrlOff.not.asInteger * instrument[\noteAmpW][i].maxItem; // max of 25 last values
-						instrument[\noteAmpW][i].maxItem.ampdb.round(1.0).postln;
+						// relAmp = ctrlOff.not.asInteger * instrument[\noteAmpW][i].maxItem; // max of 25 last values
+						relAmp = ctrlOff.not.asInteger * instrument[\noteAmpW][i].mean; // mean of last 10 values
+						instrument[\noteAmpW][i].mean.ampdb.round(1.0).postln;
 						//
 						// NEED TO MAINTAIN THE AMPLITUDE VALUE AFTER REMOVING FINGER -> UNMAP
 						synth.set(\amp, relAmp);
@@ -1147,9 +1138,9 @@
 			sigFilt = BLowPass.ar(sigFilt, 0.5*freqMax, 2); // RETRAVAILLER!!!
 
 			// Compressor Downward (classical)
-			sigComp = CompanderD.ar(sigFilt, -30.dbamp, 1.0, compR, 0.01, 0.01);
+			sigComp = CompanderD.ar(sigFilt, -30.dbamp, 1.0, 1/4, 0.01, 0.01);
 			// Compressor Upward
-			sigComp = CompanderD.ar(sigComp, -40.dbamp, 1/4, 1.0, 0.01, 0.01);
+			// sigComp = CompanderD.ar(sigComp, -40.dbamp, 1/4, 1.0, 0.01, 0.01);
 
 			// low cut frequency: freq * fFundRatio (fFundRatio should be initialized at 0.5)
 			// sigFilt = HPF.ar(sigFilt, freq * fFundRatio);

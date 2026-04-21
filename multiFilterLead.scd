@@ -64,13 +64,13 @@
 				[0.4, 1.0, 0.6, 0.4, 0.7, 0.6, 0.5, 0.1, 0.05, 0.01, -120.dbamp, -120.dbamp, -120.dbamp, -120.dbamp, -120.dbamp],
 				Array.fill(instrument[\numPartials], 1.0)
 			].flat,
-			\p2glass,
-			[
-				1.0, 0.001, 20.dbamp,
-				[0.5, 1.0, 1.266, 1.5, 2.066, 3.033, 4.3, 5.467, 6.767, 8.2, 9.8, 1.0, 1.0, 1.0, 1.0],
-				[0.4, 1.0,   0.6, 0.4,   0.9,   0.8, 0.75,  0.5,   0.3, 0.2, 0.15, -120.dbamp, -120.dbamp, -120.dbamp, -120.dbamp],
-				Array.fill(instrument[\numPartials], 1.0)
-			].flat,
+			// \p2glass,
+			// [
+			// 	1.0, 0.001, 20.dbamp,
+			// 	[0.5, 1.0, 1.266, 1.5, 2.066, 3.033, 4.3, 5.467, 6.767, 8.2, 9.8, 1.0, 1.0, 1.0, 1.0],
+			// 	[0.4, 1.0,   0.6, 0.4,   0.9,   0.8, 0.75,  0.5,   0.3, 0.2, 0.15, -120.dbamp, -120.dbamp, -120.dbamp, -120.dbamp],
+			// 	Array.fill(instrument[\numPartials], 1.0)
+			// ].flat,
 			\p4drone,
 			[
 				2.05, 0.050, 6.dbamp,
@@ -99,13 +99,13 @@
 			// 	Array.fill(instrument[\numPartials], 1).normalizeSum,
 			// 	Array.fill(instrument[\numPartials], 1.0)
 			// ].flat,
-			// \woodPerc,
-			// [
-			// 	1.2, 0.01, 60.dbamp,
-			// 	Array.fill(instrument[\numPartials], 1.0),
-			// 	Array.geom(instrument[\numPartials], 1.0, 0.7).normalizeSum,
-			// 	Array.geom(instrument[\numPartials], 1.0, 0.25)
-			// ].flat,
+			\p2woodPerc,
+			[
+				1.2, 0.01, 60.dbamp,
+				Array.fill(instrument[\numPartials], 1.0),
+				Array.geom(instrument[\numPartials], 1.0, 0.7).normalizeSum,
+				Array.geom(instrument[\numPartials], 1.0, 0.25)
+			].flat,
 			// \stonePerc,
 			// [
 			// 	0.001, 0.01, 20.dbamp,
@@ -186,7 +186,8 @@
 		instrument.add(\touchMin -> Array.fill(30, 1e12 ));
 		instrument.add(\touchMax -> Array.fill(30, -1e12 ));
 		// Assume a minimum value of 75 to cover for ghost triggers
-		instrument[\touchMin] = Array.fill(30, 50);
+		// instrument[\touchMin] = Array.fill(30, 50);
+		instrument[\touchMin] = [50, 50, 50, 50, 100, 100, 100, 100, 100, 100, 100, 100, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50];
 		instrument[\touchMax] = [801.6, 1355.8, 1297.4, 1002, 698, 596, 654, 655, 667.4, 745, 781, 799, 771, 799.6, 717.6, 806, 847, 849, 890, 926, 977, 750.8, 670, 991, 991, 1029, 1009, 1047, 1463.8, 1380.4];
 
 		// threshold of note area for triggering (trill should be scaled above 0.1 see normalization)
@@ -435,24 +436,32 @@
 					// REVIST BOF map to shake???
 					// mapping for partials modulation
 					//
-					var aMod, fMod, gyro, aDev, fDev, speed, aPartials, fPartials, numPartials = instrument[\numPartials];
-					gyro = In.kr(instrument[\busDmi][interface ++ "/raw/gyro"], 3);
+					var aMod, fMod, shake, shakeMean, aDev, fDev, speed, aPartials, fPartials, numPartials = instrument[\numPartials];
+					shake = In.kr(instrument[\busDmi][interface ++ "/instrument/shakexyz"], 3).mean;
 					// read fMuls on timbre control bus
 					fPartials = In.kr(instrument[\busSynth]["timbre"].subBus(3, numPartials), numPartials);
 					// read amps on timbre control bus
-					aPartials = In.kr(instrument[\busSynth]["timbre"].subBus(numPartials + 3, numPartials), numPartials);
+					// aPartials = In.kr(instrument[\busSynth]["timbre"].subBus(numPartials + 3, numPartials), numPartials);
 
-					aDev = (gyro.mean.linlin(-5, 5, -20, 20, nil)).dbamp;
-					fDev = (gyro.mean.linlin(-5, 5, -2.midiratio, 2.midiratio, nil));
-					speed = gyro.abs.mean.linlin(0, 10, 0.5, 5);
+					// Running average over 60 control cycles
+					// OSC messages received at about 125 Hz
+					// Control block size: 64 samples -> 750 Hz (SR = 48 kHz)
+					// 60 cycles ~ 10 OSC values
+					shakeMean = RunningSum.kr(shake, 60) * (60.reciprocal);
+					// shakeMean.round(0.1).poll(label: "shake");
 
-					// partials amp modulation
-					aMod = LFNoise1.kr(speed.dup(numPartials)).range(aDev, aDev.reciprocal) * aPartials;
+					// aDev = (shake.mean.linlin(-5, 5, -10, 10, nil)).dbamp;
+					// Partial frequency deviation (for ref FM patch, max dev 3)
+					fDev = (shakeMean.lincurve(instrument[\calibrationVals][\shakeThresh][1], instrument[\calibrationVals][\shakeMax][1], 1, 36.midiratio, -2, \min));
+					// speed = LagUD.kr(gyro.abs.mean.lincurve(0, 10, 0.5, 2, -4), 2, 2);
+
+					// fDev.round(0.1).poll(label: "dev");					// partials amp modulation
+					// aMod = LFNoise2.kr(speed.dup(numPartials)).range(aDev, aDev.reciprocal) * aPartials;
 
 					// partials freq modulation
-					fMod = LFNoise2.kr(speed.dup(numPartials)).range(fDev, fDev.reciprocal) * fPartials;
+					fMod = LFNoise2.kr(LFNoise1.kr(5).range(0.5, 2).dup(numPartials)).range(fDev, fDev.reciprocal) * fPartials;
 
-					Out.kr(instrument[\busSynth]["partialsAmod"], aMod);
+					// Out.kr(instrument[\busSynth]["partialsAmod"], aMod);
 					Out.kr(instrument[\busSynth]["partialsFmod"], fMod);
 				}.play(instrument[\mappingGrp]);
 
@@ -594,6 +603,22 @@
 					Out.kr(instrument[\busSynth]["hiPartialsMod"], mod);
 				}.play(instrument[\mappingGrp]);
 				);
+
+				//
+				// Mapping of gyro to reverb Synth parameters revMix, revRoom, revDamp
+				//
+				{
+					var mapRevMix, mapRevRoom, mapRevDamp, gyro;
+					gyro = In.kr(instrument[\busDmi][interface ++ "/raw/gyro"].index, 3);
+					//
+					mapRevMix = (gyro[0].abs + gyro[1].abs + gyro[2].abs).lincurve(0, 0.5, 0.2, 0.8, -5.4, nil);
+					mapRevRoom = (gyro[0].abs + gyro[1].abs + gyro[2].abs) / 3;
+					mapRevDamp = (gyro[0].abs + gyro[1].abs + gyro[2].abs) / 4;
+					// Write on control busses
+					Out.kr(instrument[\busSynth]["revMix"], mapRevMix);
+					Out.kr(instrument[\busSynth]["revRoom"], mapRevRoom);
+					Out.kr(instrument[\busSynth]["revDamp"], mapRevDamp);
+				}.play(instrument[\mappingGrp]);
 			})
 		});
 
@@ -609,6 +634,13 @@
 				// ~eqSynth = Synth(\equalization, [\in, 1, \out, 1, \ampMod, 0.25], ~fxGrp);
 
 
+				// reverb Synth (tail of the fx group)
+				instrument.add(\revSynth -> Synth.tail(instrument[\fxGrp], [\reverbMono, \reverbStereo][instrument[\audioChan] - 1], [
+					\in, instrument[\busSynth][\fx],
+					\mix, 0.33,
+					\room, 0.5,
+					\damp, 0.2,
+				], instrument[\fxGrp]));
 				// limiter Synth
 				// instrument.add(\limitSynth -> Synth(\comp, [\in, instrument[\busSynth][\fx], \thesh, -3.dbamp, \out, out], instrument[\limGrp]));
 				// instrument.add(\limitSynth -> Synth(\comp, [
@@ -636,7 +668,9 @@
 
 
 				// mappings of \reverb
-
+				instrument[\revSynth].map(\mix, instrument[\busSynth]["revMix"]);
+				instrument[\revSynth].map(\room, instrument[\busSynth]["revRoom"]);
+				instrument[\revSynth].map(\damp, instrument[\busSynth]["revDamp"]);
 			});
 		});
 
@@ -945,8 +979,8 @@
 							// instrument[\busSynth]["timbre"].subBus(3, instrument[\numPartials])); // n channels
 							instrument[\busSynth]["partialsFmod"]); // n channels
 						synth.map(\amps,
-							// instrument[\busSynth]["timbre"].subBus(instrument[\numPartials] + 3, instrument[\numPartials])); // n channels
-							instrument[\busSynth]["partialsAmod"], instrument[\numPartials]); // n channels
+							instrument[\busSynth]["timbre"].subBus(instrument[\numPartials] + 3, instrument[\numPartials])); // n channels
+							// instrument[\busSynth]["partialsAmod"], instrument[\numPartials]); // n channels
 						synth.map(\timeScale,
 							instrument[\busSynth]["timbre"].subBus(2 * instrument[\numPartials] + 3, instrument[\numPartials])); // n channels
 
@@ -969,7 +1003,7 @@
 						//
 						// NEED TO MAINTAIN THE AMPLITUDE VALUE AFTER REMOVING FINGER -> UNMAP
 						synth.set(\amp, relAmp);
-						("amp value at release " ++ relAmp.round(0.01)).postln;
+						("amp value at release " ++ relAmp.ampdb.round(1.0) ++ " dB").postln;
 						// calculation of release time at release.....
 						// reads amp values for each note
 						// update release times \rels
@@ -1074,11 +1108,13 @@
 
 			// cut higher frequencies (noisy) NECESSARY???
 			freqMax = freq * ( (instrument[\numPartials]-1)*harmo +1);
-			sigFilt = BLowPass.ar(sigFilt, 0.5*freqMax, 0.3); // RETRAVAILLER!!!
+			// sigFilt = BLowPass.ar(sigFilt, 0.5*freqMax, 0.3); // RETRAVAILLER!!!
+			sigFilt = BLowPass.ar(sigFilt, 0.5*freqMax, 2); // RETRAVAILLER!!!
 
-			// Compressor
+			// Compressor Downward (classical)
 			sigComp = CompanderD.ar(sigFilt, -30.dbamp, 1.0, compR, 0.01, 0.01);
-
+			// Compressor Upward
+			sigComp = CompanderD.ar(sigComp, -40.dbamp, 1/4, 1.0, 0.01, 0.01);
 			// low cut frequency: freq * fFundRatio (fFundRatio should be initialized at 0.5)
 			// sigFilt = HPF.ar(sigFilt, freq * fFundRatio);
 
@@ -1090,7 +1126,7 @@
 			// LeakDC added for security
 			//sigFilt = LeakDC.ar(sigFilt, 0.995);
 
-			pan = LFNoise2.ar(LFNoise1.kr(1).range(0.1, 1.0)).range(-0.4, 0.4) * (instrument[\audioChan] - 1);
+			pan = LFNoise2.ar(LFNoise1.kr(1).range(0.1, 1.0)).range(-0.3, 0.3) * (instrument[\audioChan] - 1);
 
 			// sigFilt = PanAz.ar(); FINIR PUS TARD
 			// Out.ar(out, PanAz.ar(2, sigFilt, pos, amp) ); // PanAz
@@ -1099,8 +1135,8 @@
 
 			// Libérer le synth seulement quand toutes les enveloppes sont closes (quand le son est rendu très faible en fait)
 			FreeSelf.kr(DetectSilence.ar(sigComp, -100.dbamp, time: 1.0)); // Freeself contrôlé par Mix(sig): 1 seul signal!
-			// Out.ar(out, PanAz.ar(2, sigComp, pos, amp) );
-			Out.ar(out, sigComp); // Mono
+			Out.ar(out, PanAz.ar(instrument[\audioChan], sigComp, pan)); // Mono
+			// Out.ar(out, sigComp); // Mono
 		});
 
 		// multiband equalizer TBC USAGE

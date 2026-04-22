@@ -57,7 +57,7 @@
 		// timbre presets
 		// [harmo, rq, ampMat, freqMuls..., amps..., timeScale...]
 		instrument.add(\timbre -> Dictionary.newFrom([
-			\p1bell,
+			\p2bell,
 			[
 				1.0, 0.001, 40.dbamp,
 				[1.0, 1.0, 0.844, 0.750, 0.826, 1.011, 1.228, 1.366, 1.504, 1.640, 1.782, 1.0, 1.0, 1.0, 1.0],
@@ -71,7 +71,7 @@
 			// 	[0.4, 1.0,   0.6, 0.4,   0.9,   0.8, 0.75,  0.5,   0.3, 0.2, 0.15, -120.dbamp, -120.dbamp, -120.dbamp, -120.dbamp],
 			// 	Array.fill(instrument[\numPartials], 1.0)
 			// ].flat,
-			\p4drone,
+			\p1drone,
 			[
 				2.05, 0.050, 6.dbamp,
 				Array.rand(instrument[\numPartials], 0.99, 1.01),
@@ -425,8 +425,8 @@
 					rq = In.kr(instrument[\busSynth]["timbre"].subBus(1), 1);
 
 					// map FSR values to rq modulation coefficient
-					rqMod = fsr.lincurve(instrument[\calibrationVals][\fsr][0] * 1.2, instrument[\calibrationVals][\fsr][1], 1, 10, -2, \min) * rq;
-
+					rqMod = fsr.lincurve(instrument[\calibrationVals][\fsr][0] * 1.2, instrument[\calibrationVals][\fsr][1], 1, 10, 0, \min) * rq;
+					// rqMod.poll;
 					// REQUIRES AMPLITUDE LIMITATION???
 
 					Out.kr(instrument[\busSynth]["rqMod"], rqMod);
@@ -473,7 +473,7 @@
 					var gyro, switchPos, switchNeg, locking, latch;
 					var thresh = [[4, 3, 3], [5, 4, 4]], ceiling = [10, 6, 8];
 					var trig, selector = 0;
-					var preset, base = 0, numParams, params = instrument[\timbre][\p1bell], lag = 1.0;
+					var preset, base = 0, numParams, params = instrument[\timbre][\p1bell], lag = 2.0;
 
 					// FLICK VERSION
 					// gyroX values are read from control busses
@@ -774,9 +774,9 @@
 			instrument.add(\octArmed -> true);
 
 			// threshold for brush
-			instrument.add(\posBrush -> 0.15);
-			instrument.add(\negBrush -> -0.15);
-			instrument.add(\reArmBrush -> 0.0); // lower threshold for re-arming (when brush value decays back to 0)
+			// instrument.add(\posBrush -> 0.15);
+			// instrument.add(\negBrush -> -0.15);
+			// instrument.add(\reArmBrush -> 0.0); // lower threshold for re-arming (when brush value decays back to 0)
 
 			// record last time an octave brush was trigged
 			instrument.add(\lastOctTime -> 0);
@@ -963,7 +963,7 @@
 						synth.map(\amp, instrument[\busSynth]["amp"].subBus(i));
 
 						// map \fDev to control bus
-						// synth.map(\fDev, instrument[\busSynth]["vibrato"].subBus(i)); // UNMAP AT RELEASE???
+						synth.map(\fDev, instrument[\busSynth]["vibrato"].subBus(i)); // UNMAP AT RELEASE???
 
 						// map \dustDens to control bus
 						synth.map(\dustDens, instrument[\busSynth]["dustDens"]);
@@ -1112,7 +1112,7 @@
 			sigFilt = BLowPass.ar(sigFilt, 0.5*freqMax, 2); // RETRAVAILLER!!!
 
 			// Compressor Downward (classical)
-			sigComp = CompanderD.ar(sigFilt, -30.dbamp, 1.0, compR, 0.01, 0.01);
+			sigComp = CompanderD.ar(sigFilt, -30.dbamp, 1.0, 1/4, 0.01, 0.01);
 			// Compressor Upward
 			sigComp = CompanderD.ar(sigComp, -40.dbamp, 1/4, 1.0, 0.01, 0.01);
 			// low cut frequency: freq * fFundRatio (fFundRatio should be initialized at 0.5)
@@ -1120,7 +1120,7 @@
 
 			// high cut frequency: freq * hiPartial (hiPartial should be initialized at freqMax / freq * 3???)
 			// sigFilt = LPF.ar(sigFilt, freq * hiPartialRatio);
-			sigComp = LPF.ar(sigComp, freq * LFNoise1.kr(0.5).range(0.5, 20)); // Aller surtout dans les basses....
+			// sigComp = LPF.ar(sigComp, freq * LFNoise1.kr(0.5).range(0.5, 20)); // Aller surtout dans les basses....
 			// (freq * hiPartialRatio).poll(label: "hiPartialRatio");
 
 			// LeakDC added for security

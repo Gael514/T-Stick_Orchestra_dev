@@ -59,7 +59,7 @@
 		instrument.add(\timbre -> Dictionary.newFrom([
 			\p2nuage,
 			[
-				1.2, 0.001, 70.dbamp,
+				1.2, 0.001, 60.dbamp,
 				Array.rand(instrument[\numPartials], 0.99, 1.01),
 				Array.geom(instrument[\numPartials], 1.0, 0.7).normalizeSum,
 				Array.fill(instrument[\numPartials], 1.0)
@@ -73,7 +73,7 @@
 			// ].flat,
 			\p3rumble,
 			[
-				0.01, 0.200, 30.dbamp,
+				0.01, 0.200, 20.dbamp,
 				// ([1] ++ Array.rand(instrument[\numPartials]-1, -3, 3).midiratio) * 1, // RETRAVILLER
 				([1.5] ++ Array.rand(instrument[\numPartials]-1, -3, 3).midiratio) * 1, // RETRAVILLER
 				Array.geom(instrument[\numPartials], 1.0, 0.95).normalizeSum,
@@ -81,7 +81,7 @@
 			].flat,
 			\p1crackle, // formerly rumblebis
 			[
-				2.05, 0.050, 36.dbamp,
+				2.05, 0.050, 24.dbamp,
 				[1] ++ Array.rand(instrument[\numPartials]-1, -3, 3).midiratio,
 				Array.geom(instrument[\numPartials], 1.0, 0.95).normalizeSum,
 				Array.fill(instrument[\numPartials], 1.0)

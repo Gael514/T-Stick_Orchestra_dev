@@ -37,9 +37,9 @@
 
 	// Instruments Definition
 	var instruments = [
-		["TStick_516", 8100, 0, "multiFilterDrone.scd", "stereo"],
+		// ["TStick_516", 8100, 0, "multiFilterDrone.scd", "stereo"],
 		// ["TStick_514", 8000, 2, "fmSynth.scd", "mono"],
-		// ["TStick_570", 8200, 4, "multiFilterLead.scd", "mono"],
+		["TStick_516", 8100, 4, "multiFilterLead.scd", "mono"],
 	].collect{
 		arg item, i;
 		Dictionary.newFrom([\name, item[0], \port, item[1], \audioOut, item[2], \patch, item[3], \mode, item[4]]);

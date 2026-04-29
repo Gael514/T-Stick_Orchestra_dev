@@ -23,23 +23,26 @@
 	////////////////////////////////
 
 	// Initial Values for Server Configuration
-	// var inDevice = "Windows WASAPI : Microphone Array (Realtek High Definition Audio)";
+	// var inDevice = "ASIO : ASIO MADIface USB";
 	var inDevice = "ASIO : ReaRoute ASIO (x64)";
 	// var inDevice = "ASIO : AudioBox ASIO Driver";
-	// var inDevice = "ASIO : ASIO MADIface USB";
-	// var outDevice = "Windows WASAPI : Speaker/HP (Realtek High Definition Audio)";
+	// var inDevice = "ASIO : MOTU M Series";
+	// var outDevice = "ASIO : ASIO MADIface USB";
 	var outDevice = "ASIO : ReaRoute ASIO (x64)";
 	// var outDevice = "ASIO : AudioBox ASIO Driver";
-	// var outDevice = "ASIO : ASIO MADIface USB";
+	// var outDevice = "ASIO : MOTU M Series";
 	var numInputBusChannels = 2;
-	var numOutputBusChannels = 6; // MAKE SURE the nb of channels matches the configuration
+	var numOutputBusChannels = 2; // MAKE SURE the nb of channels matches the configuration
 	var sampleRate = 48000;
+
+	// Main Volume in dBFS (may be adjusted in volume GUI)
+	var mainVol = 0;
 
 	// Instruments Definition
 	var instruments = [
-		// ["TStick_516", 8100, 0, "multiFilterDrone.scd", "stereo"],
+		["TStick_516", 8100, 0, "multiFilterDrone.scd", "stereo"],
 		// ["TStick_514", 8000, 2, "fmSynth.scd", "mono"],
-		["TStick_516", 8100, 4, "multiFilterLead.scd", "mono"],
+		// ["TStick_516", 8100, 0, "multiFilterLead.scd", "stereo"],
 	].collect{
 		arg item, i;
 		Dictionary.newFrom([\name, item[0], \port, item[1], \audioOut, item[2], \patch, item[3], \mode, item[4]]);
@@ -317,9 +320,9 @@
 		~synthDefMaker.(\reverbStereo, {
 			arg in=0, mix=0, room=0.5, damp=0.5;
 			var sig;
-			mix = mix.lag(0.1);
-			room = room.lag(0.1);
-			damp = damp.lag(0.1);
+			mix = mix.lag(0.5);
+			room = room.lag(0.5);
+			damp = damp.lag(0.5);
 			sig = In.ar(in, 2);  // INPUT IS 2 CHANNEL
 			sig = FreeVerb2.ar(
 				sig[0],
@@ -335,9 +338,9 @@
 		~synthDefMaker.(\reverbMono, {
 			arg in=0, mix=0, room=0.5, damp=0.5;
 			var sig;
-			mix = mix.lag(0.1);
-			room = room.lag(0.1);
-			damp = damp.lag(0.1);
+			mix = mix.lag(0.5);
+			room = room.lag(0.5);
+			damp = damp.lag(0.5);
 			sig = In.ar(in, 1);  // INPUT IS 1 CHANNEL
 			sig = FreeVerb.ar(
 				sig,
@@ -363,6 +366,13 @@
 		s.plotTree;
 
 		s.freeAll;
+		s.sync;
+
+		// Main Volume
+		v = s.volume;
+		v.gui;
+		v.volume = mainVol;
+
 		s.sync;
 	});
 	// end of wait for boot function
